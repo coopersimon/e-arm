@@ -4,7 +4,8 @@ use crate::core::{
     Mode,
     CPSR,
     SPSR,
-    ARMCore
+    ARMCore,
+    ARMv4
 };
 
 pub struct ARM7TDMI {
@@ -23,6 +24,9 @@ pub struct ARM7TDMI {
     svc_spsr: SPSR,
 
     // memory...
+    
+    // cycle counting
+    cycles: usize,
 }
 
 impl ARM7TDMI {
@@ -40,6 +44,8 @@ impl ARM7TDMI {
             irq_spsr: Default::default(),
             und_spsr: Default::default(),
             svc_spsr: Default::default(),
+
+            cycles: 0,
         }
     }
 }
@@ -63,4 +69,10 @@ impl ARMCore for ARM7TDMI {
         // TODO: trigger interrupt?
         self.mode = mode;
     }
+
+    fn add_cycles(&mut self, cycles: usize) {
+        self.cycles += cycles;
+    }
 }
+
+impl ARMv4 for ARM7TDMI {}

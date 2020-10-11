@@ -1,9 +1,12 @@
 /// Core traits and types for ARM processors (data access).
 
 mod armv4;
+mod armv4_test;
 
 use bitflags::bitflags;
 use crate::common::{bit, bits};
+
+pub use armv4::ARMv4;
 
 bitflags! {
     #[derive(Default)]
@@ -39,6 +42,8 @@ pub trait ARMCore {
     fn write_cpsr(&mut self, data: CPSR);
 
     fn set_mode(&mut self, mode: Mode);
+
+    fn add_cycles(&mut self, cycles: usize);
 }
 
 #[derive(PartialEq, Eq)]

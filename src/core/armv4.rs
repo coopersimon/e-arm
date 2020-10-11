@@ -30,7 +30,7 @@ pub trait ARMv4: ARMCore {
         if self.check_cond(i) {
             // Decode
             if (i & DATA_PROC) == 0 {
-                self.data_proc();
+                self.data_proc(i);
             }
         }
     }
@@ -39,40 +39,40 @@ pub trait ARMv4: ARMCore {
     fn check_cond(&self, i: u32) -> bool {
         const SHIFT: usize = 28;
         match i >> SHIFT {
-            0 => self.read_cpsr().contains(CPSR::Z),
-            1 => !self.read_cpsr().contains(CPSR::Z),
-            2 => self.read_cpsr().contains(CPSR::C),
-            3 => !self.read_cpsr().contains(CPSR::C),
-            4 => self.read_cpsr().contains(CPSR::N),
-            5 => !self.read_cpsr().contains(CPSR::N),
-            6 => self.read_cpsr().contains(CPSR::V),
-            7 => !self.read_cpsr().contains(CPSR::V),
-            8 => {
+            0x0 => self.read_cpsr().contains(CPSR::Z),  // EQ
+            0x1 => !self.read_cpsr().contains(CPSR::Z), // NE
+            0x2 => self.read_cpsr().contains(CPSR::C),  // CS
+            0x3 => !self.read_cpsr().contains(CPSR::C), // CC
+            0x4 => self.read_cpsr().contains(CPSR::N),  // MI
+            0x5 => !self.read_cpsr().contains(CPSR::N), // PL
+            0x6 => self.read_cpsr().contains(CPSR::V),  // VS
+            0x7 => !self.read_cpsr().contains(CPSR::V), // VC
+            0x8 => {    // HI
                 let cpsr = self.read_cpsr();
                 cpsr.contains(CPSR::C) && !cpsr.contains(CPSR::Z)
             },
-            9 => {
+            0x9 => {    // LS
                 let cpsr = self.read_cpsr();
                 !cpsr.contains(CPSR::C) || cpsr.contains(CPSR::Z)
             },
-            10 => {
+            0xA => {    // GE
                 let cpsr = self.read_cpsr();
                 cpsr.contains(CPSR::N) == cpsr.contains(CPSR::V)
             },
-            11 => {
+            0xB => {    // LT
                 let cpsr = self.read_cpsr();
                 cpsr.contains(CPSR::N) != cpsr.contains(CPSR::V)
             },
-            12 => {
+            0xC => {    // GT
                 let cpsr = self.read_cpsr();
                 !cpsr.contains(CPSR::Z) && (cpsr.contains(CPSR::N) == cpsr.contains(CPSR::V))
             },
-            13 => {
+            0xD => {    // LE
                 let cpsr = self.read_cpsr();
                 cpsr.contains(CPSR::Z) || (cpsr.contains(CPSR::N) != cpsr.contains(CPSR::V))
             },
-            14 => true,
-            15 => false,
+            0xE => true,    // AL
+            0xF => false,   // NE
             _ => unreachable!()
         }
     }
@@ -81,9 +81,6 @@ pub trait ARMv4: ARMCore {
 
     /// Decode a data processing instruction.
     fn data_proc(&mut self, i: u32) {
-        const SHIFT: usize = 21;
-        const MASK: u32 = 0xF;
-
         const fn set_flags(i: u32) -> bool {
             test_bit(i, 20)
         }
@@ -120,6 +117,8 @@ pub trait ARMv4: ARMCore {
             }
         };
 
+        const SHIFT: usize = 21;
+        const MASK: u32 = 0xF;
         match (i >> SHIFT) & MASK {
             0x0 => self.and(set_flags(i), rd(i), self.read_reg(rn(i)), op2),    // AND
             0x1 => self.eor(set_flags(i), rd(i), self.read_reg(rn(i)), op2),    // EOR
