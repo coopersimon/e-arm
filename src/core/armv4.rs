@@ -243,7 +243,7 @@ pub trait ARMv4: ARMCore {
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::N, test_bit(result, 31));
         cpsr.set(CPSR::Z, result == 0);
-        cpsr.set(CPSR::C, overflow);
+        cpsr.set(CPSR::C, !overflow);
         cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
         self.write_cpsr(cpsr);
     }
@@ -284,7 +284,7 @@ pub trait ARMv4: ARMCore {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
-            cpsr.set(CPSR::C, overflow);
+            cpsr.set(CPSR::C, !overflow);
             cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
             self.write_cpsr(cpsr);
         }

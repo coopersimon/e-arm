@@ -406,7 +406,7 @@ fn test_sub() {
             },
             TestOut {
                 regs: vec![None, Some(0x1FFFFFFE)],
-                cpsr: CPSR::C,
+                cpsr: CPSR::default(),
                 cycles: None,
             }
         ),
@@ -419,7 +419,7 @@ fn test_sub() {
             },
             TestOut {
                 regs: vec![Some(0xFF3F)],
-                cpsr: CPSR::default(),
+                cpsr: CPSR::C,
                 cycles: None,
             }
         ),
