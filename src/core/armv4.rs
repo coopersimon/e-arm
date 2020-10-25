@@ -109,9 +109,9 @@ pub trait ARMv4: ARMCore {
             };
             let r_val = self.read_reg((i & 0xF) as usize);
             match (i >> 5) & 3 {
-                0 => r_val << shift,
-                1 => r_val >> shift,
-                2 => ((r_val as i32) >> shift) as u32,
+                0 => r_val.wrapping_shl(shift),
+                1 => r_val.wrapping_shr(shift),
+                2 => (r_val as i32).wrapping_shr(shift) as u32,
                 3 => r_val.rotate_right(shift),
                 _ => unreachable!()
             }
