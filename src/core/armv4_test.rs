@@ -136,6 +136,19 @@ fn test_and() {
                 cpsr: CPSR::Z,
                 cycles: None,
             }
+        ),
+        (
+            // ANDS R1, R0, R1 << #0: Cond=AL, I=0, Instr=0, S=1, Rn=0, Rd=1, Sh=(Imm=0, ASL), Rm=1, 
+            TestIn {
+                regs: vec![0x95959595, 0x8181FFFF],
+                cpsr: Some(CPSR::C),
+                instr: 0xE0101001
+            },
+            TestOut {
+                regs: vec![None, Some(0x81819595)],
+                cpsr: CPSR::N | CPSR::C,
+                cycles: None,
+            }
         )
     ];
 
@@ -232,6 +245,19 @@ fn test_orr() {
             TestOut {
                 regs: vec![None, Some(0x95959595)],
                 cpsr: CPSR::N,
+                cycles: None,
+            }
+        ),
+        (
+            // ORRS R1, R0, R1 >> #0: Cond=AL, I=0, Instr=0, S=1, Rn=0, Rd=1, Sh=(Imm=0, LSR), Rm=1, 
+            TestIn {
+                regs: vec![0x95959595, 0x81810000],
+                cpsr: Some(CPSR::C),
+                instr: 0xE1901041
+            },
+            TestOut {
+                regs: vec![None, Some(0xFFFFFFFF)],
+                cpsr: CPSR::N | CPSR::C,
                 cycles: None,
             }
         )
