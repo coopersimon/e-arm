@@ -1,6 +1,9 @@
 /// ARMv4 Instruction Set
 
-use super::*;
+use super::{
+    constants::*,
+    *
+};
 use crate::common::*;
 
 /*mod Cond {
@@ -24,12 +27,18 @@ use crate::common::*;
 pub trait ARMv4: ARMCore {
     /// Decode and execute the instruction.
     fn execute_instruction(&mut self, i: u32) {
+        const BRANCH: u32 = bits(24, 27);
         const DATA_PROC: u32 = bits(26, 27);
-
 
         if self.check_cond(i) {
             // Decode
-            if (i & DATA_PROC) == 0 {
+            if (i & BRANCH) == (0b1111 << 24) {
+                self.swi();
+            } else if (i & BRANCH) == (0b1010 << 24) {
+                self.b(i);
+            } else if (i & BRANCH) == (0b1011 << 24) {
+                self.bl(i);
+            } else if (i & DATA_PROC) == 0 {
                 self.data_proc(i);
             }
         }
@@ -182,24 +191,28 @@ pub trait ARMv4: ARMCore {
     // Logic
 
     /// AND
+    /// Bitwise AND
     fn and(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
         let result = op1 & op2;
         self.writeback(s, rd, result, set_c);
     }
 
     /// EOR
+    /// Bitwise exclusive OR (xor)
     fn eor(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
         let result = op1 ^ op2;
         self.writeback(s, rd, result, set_c);
     }
 
     /// ORR
+    /// Bitwise inclusive OR
     fn orr(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
         let result = op1 | op2;
         self.writeback(s, rd, result, set_c);
     }
 
     /// BIC
+    /// NOT op2 with AND
     fn bic(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
         let result = op1 & !op2;
         self.writeback(s, rd, result, set_c);
@@ -214,6 +227,7 @@ pub trait ARMv4: ARMCore {
     // Comparisons
 
     /// TST
+    /// Bitwise AND and set flags.
     fn tst(&mut self, op1: u32, op2: u32, set_c: Option<bool>) {
         let result = op1 & op2;
         let mut cpsr = self.read_cpsr();
@@ -226,6 +240,7 @@ pub trait ARMv4: ARMCore {
     }
 
     /// TEQ
+    /// Bitwise OR and set flags.
     fn teq(&mut self, op1: u32, op2: u32, set_c: Option<bool>) {
         let result = op1 | op2;
         let mut cpsr = self.read_cpsr();
@@ -238,6 +253,7 @@ pub trait ARMv4: ARMCore {
     }
 
     /// CMP
+    /// Arithmetic sub and set flags.
     fn cmp(&mut self, op1: u32, op2: u32) {
         let (result, overflow) = op1.overflowing_sub(op2);
         let mut cpsr = self.read_cpsr();
@@ -249,6 +265,7 @@ pub trait ARMv4: ARMCore {
     }
 
     /// CMP
+    /// Arithmetic add and set flags.
     fn cmn(&mut self, op1: u32, op2: u32) {
         let (result, overflow) = op1.overflowing_add(op2);
         let mut cpsr = self.read_cpsr();
@@ -262,6 +279,7 @@ pub trait ARMv4: ARMCore {
     // Arithmetic
 
     /// ADD
+    /// Arithmetic add without carry.
     fn add(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let (result, overflow) = op1.overflowing_add(op2);
         self.write_reg(rd, result);
@@ -276,6 +294,8 @@ pub trait ARMv4: ARMCore {
     }
 
     /// SUB / RSB
+    /// Arithmetic subtract without carry.
+    /// Swap op1 and op2 to get RSB.
     /// TODO: Check if we can use add with negated op2.
     fn sub(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let (result, overflow) = op1.overflowing_sub(op2);
@@ -291,7 +311,9 @@ pub trait ARMv4: ARMCore {
     }
 
     /// ADC / SBC / RSC
+    /// Arithmetic add or subtract with carry / borrow.
     /// Perform bitwise NOT on op2 to get SBC/RSC.
+    /// Swap op1 and op2 to get RSC.
     fn adc(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let mut cpsr = self.read_cpsr();
         let (r1, o1) = op1.overflowing_add(op2);
@@ -304,5 +326,49 @@ pub trait ARMv4: ARMCore {
             cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
             self.write_cpsr(cpsr);
         }
+    }
+
+    // Branch
+
+    /// B
+    /// Branch
+    fn b(&mut self, i: u32) {
+        let raw_offset = i & 0xFFFFFF;
+        let offset = if test_bit(raw_offset, 23) {
+            (raw_offset | 0xFF000000) << 2
+        } else {
+            raw_offset << 2
+        };
+
+        let current_pc = self.read_reg(PC_REG);
+        self.write_reg(PC_REG, current_pc.wrapping_add(4).wrapping_add(offset));
+    }
+
+    /// BL
+    /// Branch and link (using r14)
+    fn bl(&mut self, i: u32) {
+        let raw_offset = i & 0xFFFFFF;
+        let offset = if test_bit(raw_offset, 23) {
+            (raw_offset | 0xFF000000) << 2
+        } else {
+            raw_offset << 2
+        };
+
+        let current_pc = self.read_reg(PC_REG);
+        self.write_reg(LINK_REG, current_pc);
+        self.write_reg(PC_REG, current_pc.wrapping_add(4).wrapping_add(offset));
+    }
+
+    /// SWI
+    /// Software interrupt
+    fn swi(&mut self) {
+        self.trigger_exception(Exception::SoftwareInterrupt);
+    }
+
+    // Data transfer
+
+    /// LDR
+    fn ldr(&mut self) {
+        
     }
 }

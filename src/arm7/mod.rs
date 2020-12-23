@@ -1,6 +1,8 @@
 /// ARM7TDMI processor.
 
 use crate::core::{
+    constants::*,
+    Exception,
     Mode,
     CPSR,
     SPSR,
@@ -48,6 +50,7 @@ impl ARM7TDMI {
             cycles: 0,
         }
     }
+
 }
 
 impl ARMCore for ARM7TDMI {
@@ -65,9 +68,124 @@ impl ARMCore for ARM7TDMI {
         self.cpsr = data;
     }
 
-    fn set_mode(&mut self, mode: Mode) {
-        // TODO: trigger interrupt?
-        self.mode = mode;
+    fn trigger_exception(&mut self, exception: Exception) {
+        use Exception::*;
+        match exception {
+            Reset => {
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_0000;
+                self.svc_spsr = self.cpsr;
+
+                self.mode = Mode::SVC;
+                self.cpsr.set_mode(Mode::SVC);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I | CPSR::F);
+            },
+            DataAbort => {
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_0010;
+
+                self.mode = Mode::ABT;
+                self.cpsr.set_mode(Mode::ABT);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I);
+            },
+            FastInterrupt => {
+                self.fiq_regs[0] = self.regs[8];
+                self.fiq_regs[1] = self.regs[9];
+                self.fiq_regs[2] = self.regs[10];
+                self.fiq_regs[3] = self.regs[11];
+                self.fiq_regs[4] = self.regs[12];
+                self.fiq_regs[5] = self.regs[13];
+                self.fiq_regs[6] = self.regs[14];
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_001C;
+                self.fiq_spsr = self.cpsr;
+
+                self.mode = Mode::FIQ;
+                self.cpsr.set_mode(Mode::FIQ);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I | CPSR::F);
+            },
+            Interrupt => {
+                self.irq_regs[0] = self.regs[13];
+                self.irq_regs[1] = self.regs[14];
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_0018;
+                self.irq_spsr = self.cpsr;
+
+                self.mode = Mode::IRQ;
+                self.cpsr.set_mode(Mode::IRQ);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I);
+            },
+            PrefetchAbort => {
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_000C;
+
+                self.mode = Mode::ABT;
+                self.cpsr.set_mode(Mode::ABT);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I);
+            },
+            SoftwareInterrupt => {
+                self.svc_regs[0] = self.regs[13];
+                self.svc_regs[1] = self.regs[14];
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_0008;
+                self.svc_spsr = self.cpsr;
+
+                self.mode = Mode::SVC;
+                self.cpsr.set_mode(Mode::SVC);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I);
+            },
+            UndefinedInstruction => {
+                self.und_regs[0] = self.regs[13];
+                self.und_regs[1] = self.regs[14];
+                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[PC_REG] = 0x0000_0004;
+                self.und_spsr = self.cpsr;
+
+                self.mode = Mode::UND;
+                self.cpsr.set_mode(Mode::UND);
+                self.cpsr.remove(CPSR::T);
+                self.cpsr.insert(CPSR::I);
+            },
+        }
+    }
+
+    fn return_from_exception(&mut self) {
+        use Mode::*;
+        match self.mode {
+            USR => panic!("Attempting to transition from USR to USR"),
+            FIQ => {
+                self.cpsr = self.fiq_spsr;
+                self.regs[8] = self.fiq_regs[0];
+                self.regs[9] = self.fiq_regs[1];
+                self.regs[10] = self.fiq_regs[2];
+                self.regs[11] = self.fiq_regs[3];
+                self.regs[12] = self.fiq_regs[4];
+                self.regs[13] = self.fiq_regs[5];
+                self.regs[14] = self.fiq_regs[6];
+            },
+            IRQ => {
+                self.cpsr = self.irq_spsr;
+                self.regs[13] = self.irq_regs[0];
+                self.regs[14] = self.irq_regs[1];
+            },
+            UND => {
+                self.cpsr = self.und_spsr;
+                self.regs[13] = self.und_regs[0];
+                self.regs[14] = self.und_regs[1];
+            },
+            SVC => {
+                self.cpsr = self.svc_spsr;
+                self.regs[13] = self.svc_regs[0];
+                self.regs[14] = self.svc_regs[1];
+            }
+        }
+        self.mode = USR;
     }
 
     fn add_cycles(&mut self, cycles: usize) {
