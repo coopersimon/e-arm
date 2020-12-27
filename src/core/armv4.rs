@@ -28,6 +28,8 @@ pub trait ARMv4: ARMCore {
     /// Decode and execute the instruction.
     fn execute_instruction(&mut self, i: u32) {
         const BRANCH: u32 = bits(24, 27);
+        const MUL_HI: u32 = bits(25, 27);
+        const MUL_LO: u32 = bits(4, 7);
         const DATA_PROC: u32 = bits(26, 27);
 
         if self.check_cond(i) {
@@ -38,8 +40,14 @@ pub trait ARMv4: ARMCore {
                 self.b(i);
             } else if (i & BRANCH) == (0b1011 << 24) {
                 self.bl(i);
+            } else if (i & bits(8, 27)) == (0b0001_0010_1111_1111_1111_0001 << 4) {
+                self.bx(i);
+            } else if (i & MUL_HI) == 0 && (i & MUL_LO) == (0b1001 << 4) {
+                self.exec_mul(i);
             } else if (i & DATA_PROC) == 0 {
                 self.data_proc(i);
+            } else {
+                self.trigger_exception(Exception::UndefinedInstruction);
             }
         }
     }
@@ -88,11 +96,40 @@ pub trait ARMv4: ARMCore {
 
     // Decoding functions
 
+    /// Decode a multiply instruction.
+    fn exec_mul(&mut self, i: u32) {
+        let set_flags = test_bit(i, 20);
+        let rd = {
+            const SHIFT: usize = 16;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let rn = {
+            const SHIFT: usize = 12;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let rs = {
+            const SHIFT: usize = 8;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let rm = {
+            const MASK: u32 = 0xF;
+            (i & MASK) as usize
+        };
+        const SHIFT: usize = 21;
+        const MASK: u32 = 0xF;
+        match (i >> SHIFT) & MASK {
+            0x0 => self.mul(set_flags, rd, rs, rm),
+            0x1 => self.mla(set_flags, rd, rn, rs, rm),
+            _ => unreachable!("unknown MUL instruction"),
+        }
+    }
+
     /// Decode a data processing instruction.
     fn data_proc(&mut self, i: u32) {
-        const fn set_flags(i: u32) -> bool {
-            test_bit(i, 20)
-        }
+        let set_flags = test_bit(i, 20);
         const fn rn(i: u32) -> usize {
             const SHIFT: usize = 16;
             const MASK: u32 = 0xF;
@@ -108,22 +145,38 @@ pub trait ARMv4: ARMCore {
         const SHIFT: usize = 21;
         const MASK: u32 = 0xF;
         match (i >> SHIFT) & MASK {
-            0x0 => self.and(set_flags(i), rd(i), self.read_reg(rn(i)), op2, shift_carry),   // AND
-            0x1 => self.eor(set_flags(i), rd(i), self.read_reg(rn(i)), op2, shift_carry),   // EOR
-            0x2 => self.sub(set_flags(i), rd(i), self.read_reg(rn(i)), op2),                // SUB
-            0x3 => self.sub(set_flags(i), rd(i), op2, self.read_reg(rn(i))),                // RSB
-            0x4 => self.add(set_flags(i), rd(i), self.read_reg(rn(i)), op2),                // ADD
-            0x5 => self.adc(set_flags(i), rd(i), self.read_reg(rn(i)), op2),                // ADC
-            0x6 => self.adc(set_flags(i), rd(i), self.read_reg(rn(i)), !op2),               // SBC
-            0x7 => self.adc(set_flags(i), rd(i), op2, !self.read_reg(rn(i))),               // RSC
-            0x8 => self.tst(self.read_reg(rn(i)), op2, shift_carry),                        // TST
-            0x9 => self.teq(self.read_reg(rn(i)), op2, shift_carry),                        // TEQ
-            0xA => self.cmp(self.read_reg(rn(i)), op2),                                     // CMP
-            0xB => self.cmn(self.read_reg(rn(i)), op2),                                     // CMN
-            0xC => self.orr(set_flags(i), rd(i), self.read_reg(rn(i)), op2, shift_carry),   // ORR
-            0xD => self.mov(set_flags(i), rd(i), op2, shift_carry),                         // MOV
-            0xE => self.bic(set_flags(i), rd(i), self.read_reg(rn(i)), op2, shift_carry),   // BIC
-            0xF => self.mov(set_flags(i), rd(i), !op2, shift_carry),                        // MVN
+            0x0 => self.and(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // AND
+            0x1 => self.eor(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // EOR
+            0x2 => self.sub(set_flags, rd(i), self.read_reg(rn(i)), op2),               // SUB
+            0x3 => self.sub(set_flags, rd(i), op2, self.read_reg(rn(i))),               // RSB
+            0x4 => self.add(set_flags, rd(i), self.read_reg(rn(i)), op2),               // ADD
+            0x5 => self.adc(set_flags, rd(i), self.read_reg(rn(i)), op2),               // ADC
+            0x6 => self.adc(set_flags, rd(i), self.read_reg(rn(i)), !op2),              // SBC
+            0x7 => self.adc(set_flags, rd(i), op2, !self.read_reg(rn(i))),              // RSC
+            0x8 => if set_flags {
+                self.tst(self.read_reg(rn(i)), op2, shift_carry)                        // TST
+            } else {
+                self.mrs(false, rd(i))
+            },
+            0x9 => if set_flags {
+                self.teq(self.read_reg(rn(i)), op2, shift_carry)                        // TEQ
+            } else {
+                self.msr(false, i)
+            },
+            0xA => if set_flags {
+                self.cmp(self.read_reg(rn(i)), op2)                                     // CMP
+            } else {
+                self.mrs(true, rd(i))
+            },
+            0xB => if set_flags {
+                self.cmn(self.read_reg(rn(i)), op2)                                     // CMN
+            } else {
+                self.msr(true, i)
+            },
+            0xC => self.orr(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // ORR
+            0xD => self.mov(set_flags, rd(i), op2, shift_carry),                        // MOV
+            0xE => self.bic(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // BIC
+            0xF => self.mov(set_flags, rd(i), !op2, shift_carry),                       // MVN
             _ => unreachable!()
         }
     }
@@ -178,13 +231,17 @@ pub trait ARMv4: ARMCore {
     fn writeback(&mut self, s: bool, rd: usize, result: u32, set_c: Option<bool>) {
         self.write_reg(rd, result);
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            if let Some(c) = set_c {
-                cpsr.set(CPSR::C, c);
+            if rd == PC_REG {
+                self.return_from_exception();
+            } else {
+                let mut cpsr = self.read_cpsr();
+                cpsr.set(CPSR::N, test_bit(result, 31));
+                cpsr.set(CPSR::Z, result == 0);
+                if let Some(c) = set_c {
+                    cpsr.set(CPSR::C, c);
+                }
+                self.write_cpsr(cpsr);
             }
-            self.write_cpsr(cpsr);
         }
     }
 
@@ -284,12 +341,16 @@ pub trait ARMv4: ARMCore {
         let (result, overflow) = op1.overflowing_add(op2);
         self.write_reg(rd, result);
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.set(CPSR::C, overflow);
-            cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-            self.write_cpsr(cpsr);
+            if rd == PC_REG {
+                self.return_from_exception();
+            } else {
+                let mut cpsr = self.read_cpsr();
+                cpsr.set(CPSR::N, test_bit(result, 31));
+                cpsr.set(CPSR::Z, result == 0);
+                cpsr.set(CPSR::C, overflow);
+                cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
+                self.write_cpsr(cpsr);
+            }
         }
     }
 
@@ -301,12 +362,16 @@ pub trait ARMv4: ARMCore {
         let (result, overflow) = op1.overflowing_sub(op2);
         self.write_reg(rd, result);
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.set(CPSR::C, !overflow);
-            cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
-            self.write_cpsr(cpsr);
+            if rd == PC_REG {
+                self.return_from_exception();
+            } else {
+                let mut cpsr = self.read_cpsr();
+                cpsr.set(CPSR::N, test_bit(result, 31));
+                cpsr.set(CPSR::Z, result == 0);
+                cpsr.set(CPSR::C, !overflow);
+                cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
+                self.write_cpsr(cpsr);
+            }
         }
     }
 
@@ -320,10 +385,43 @@ pub trait ARMv4: ARMCore {
         let (result, o2) = r1.overflowing_add(cpsr.carry());
         self.write_reg(rd, result);
         if s {
+            if rd == PC_REG {
+                self.return_from_exception();
+            } else {
+                cpsr.set(CPSR::N, test_bit(result, 31));
+                cpsr.set(CPSR::Z, result == 0);
+                cpsr.set(CPSR::C, o1 || o2);
+                cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
+                self.write_cpsr(cpsr);
+            }
+        }
+    }
+
+    /// MUL
+    /// Multiply
+    fn mul(&mut self, s: bool, rd: usize, rs: usize, rm: usize) {
+        let result = self.read_reg(rs).wrapping_mul(self.read_reg(rm));
+        self.write_reg(rd, result);
+        if s {
+            let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
-            cpsr.set(CPSR::C, o1 || o2);
-            cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
+            cpsr.remove(CPSR::C);
+            self.write_cpsr(cpsr);
+        }
+    }
+
+    /// MLA
+    /// Multiply and accumulate
+    fn mla(&mut self, s: bool, rd: usize, rn: usize, rs: usize, rm: usize) {
+        let mul_result = self.read_reg(rs).wrapping_mul(self.read_reg(rm));
+        let result = mul_result.wrapping_add(self.read_reg(rn));
+        self.write_reg(rd, result);
+        if s {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::N, test_bit(result, 31));
+            cpsr.set(CPSR::Z, result == 0);
+            cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
     }
@@ -359,6 +457,15 @@ pub trait ARMv4: ARMCore {
         self.write_reg(PC_REG, current_pc.wrapping_add(4).wrapping_add(offset));
     }
 
+    /// BX
+    fn bx(&mut self, i: u32) {
+        let reg = self.read_reg((i & 0xF) as usize);
+        let mut cpsr = self.read_cpsr();
+        cpsr.set(CPSR::T, (reg & 1) != 0);
+        self.write_cpsr(cpsr);
+        self.write_reg(PC_REG, reg & 0xFFFFFFFE);
+    }
+
     /// SWI
     /// Software interrupt
     fn swi(&mut self) {
@@ -366,6 +473,38 @@ pub trait ARMv4: ARMCore {
     }
 
     // Data transfer
+
+    /// MRS
+    /// Move program status register into general purpose register
+    fn mrs(&mut self, spsr: bool, rd: usize) {
+        if spsr {
+            self.write_reg(rd, self.read_spsr().bits());
+        } else {
+            self.write_reg(rd, self.read_cpsr().bits());
+        }
+    }
+
+    /// MSR
+    /// Move general purpose register into program status register
+    fn msr(&mut self, spsr: bool, i: u32) {
+        let mask = utils::fsxc_mask(i);
+        let data = if test_bit(i, 25) { // Immediate
+            let shift = (i & 0xF00) >> 7;
+            let imm = i & 0xFF;
+            imm.rotate_right(shift)
+        } else {
+            self.read_reg((i & 0xF) as usize)
+        };
+        if spsr {
+            let old_spsr = self.read_spsr().bits() & !mask;
+            let new_spsr = CPSR::from_bits_truncate((data & mask) | old_spsr);
+            self.write_spsr(new_spsr);
+        } else {
+            let old_cpsr = self.read_cpsr().bits() & !mask;
+            let new_cpsr = CPSR::from_bits_truncate((data & mask) | old_cpsr);
+            self.write_cpsr(new_cpsr);
+        }
+    }
 
     /// LDR
     fn ldr(&mut self) {

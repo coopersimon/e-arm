@@ -5,6 +5,7 @@ struct TestARM4Core {
     regs: [u32; 16],
 
     cpsr: CPSR,
+    spsr: CPSR,
 
     cycles: usize,
 }
@@ -16,6 +17,7 @@ impl TestARM4Core {
             regs: [0; 16],
 
             cpsr: Default::default(),
+            spsr: Default::default(),
 
             cycles: 0,
         }
@@ -37,7 +39,17 @@ impl ARMCore for TestARM4Core {
         self.cpsr = data;
     }
 
-    fn set_mode(&mut self, mode: Mode) {
+    fn read_spsr(&self) -> CPSR {
+        self.spsr
+    }
+    fn write_spsr(&mut self, data: CPSR) {
+        self.spsr = data;
+    }
+
+    fn trigger_exception(&mut self, exception: Exception) {
+        // TODO...
+    }
+    fn return_from_exception(&mut self) {
         // TODO...
     }
 
@@ -580,4 +592,93 @@ fn test_sbc() {
 
 
 // Test comparison
+
+// Test branch
+
+
 // Test move
+
+#[test]
+fn test_mrs() {
+    let data = vec![
+        (
+            // MRS R0, CPSR
+            TestIn {
+                regs: vec![0x123456],
+                cpsr: Some(CPSR::C | CPSR::V | CPSR::USR),
+                instr: 0xE10F_0000
+            },
+            TestOut {
+                regs: vec![Some(0x3000_0010)],
+                cpsr: CPSR::C | CPSR::V | CPSR::USR,
+                cycles: None,
+            }
+        ),
+        (
+            // MRS R0, SPSR
+            TestIn {
+                regs: vec![0x123456],
+                cpsr: None,
+                instr: 0xE14F_0000
+            },
+            TestOut {
+                regs: vec![Some(0)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        )
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}
+
+#[test]
+fn test_msr() {
+    let data = vec![
+        (
+            // MSR CPSR_flg, R1
+            TestIn {
+                regs: vec![0x3000_0011, 0x9000_0011],
+                cpsr: Some(CPSR::C | CPSR::V | CPSR::USR),
+                instr: 0xE128_F001
+            },
+            TestOut {
+                regs: Vec::new(),
+                cpsr: CPSR::N | CPSR::V | CPSR::USR,
+                cycles: None,
+            }
+        ),
+        (
+            // MSR CPSR_fc, R0
+            TestIn {
+                regs: vec![0x3000_0010, 0x9000_0010],
+                cpsr: Some(CPSR::SVC),
+                instr: 0xE129_F000
+            },
+            TestOut {
+                regs: Vec::new(),
+                cpsr: CPSR::C | CPSR::V | CPSR::USR,
+                cycles: None,
+            }
+        ),
+        (
+            // MSR CPSR_flg, 0xF000_0000
+            TestIn {
+                regs: vec![0x3000_0010, 0x9000_0010],
+                cpsr: Some(CPSR::USR),
+                instr: 0xE328_F4F0
+            },
+            TestOut {
+                regs: Vec::new(),
+                cpsr: CPSR::N | CPSR::Z | CPSR::C | CPSR::V | CPSR::USR,
+                cycles: None,
+            }
+        )
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}

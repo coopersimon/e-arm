@@ -2,6 +2,7 @@
 
 mod armv4;
 mod armv4_test;
+mod utils;
 
 use bitflags::bitflags;
 use crate::common::{bit, bits};
@@ -58,6 +59,9 @@ pub trait ARMCore {
 
     fn read_cpsr(&self) -> CPSR;
     fn write_cpsr(&mut self, data: CPSR);
+
+    fn read_spsr(&self) -> CPSR;
+    fn write_spsr(&mut self, data: CPSR);
 
     fn trigger_exception(&mut self, exception: Exception);
     fn return_from_exception(&mut self);

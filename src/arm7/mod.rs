@@ -17,12 +17,14 @@ pub struct ARM7TDMI {
     fiq_regs: [u32; 7],
     irq_regs: [u32; 2],
     und_regs: [u32; 2],
+    abt_regs: [u32; 2],
     svc_regs: [u32; 2],
 
     cpsr: CPSR,
     fiq_spsr: SPSR,
     irq_spsr: SPSR,
     und_spsr: SPSR,
+    abt_spsr: SPSR,
     svc_spsr: SPSR,
 
     // memory...
@@ -39,12 +41,14 @@ impl ARM7TDMI {
             fiq_regs: [0; 7],
             irq_regs: [0; 2],
             und_regs: [0; 2],
+            abt_regs: [0; 2],
             svc_regs: [0; 2],
 
             cpsr: Default::default(),
             fiq_spsr: Default::default(),
             irq_spsr: Default::default(),
             und_spsr: Default::default(),
+            abt_spsr: Default::default(),
             svc_spsr: Default::default(),
 
             cycles: 0,
@@ -68,6 +72,29 @@ impl ARMCore for ARM7TDMI {
         self.cpsr = data;
     }
 
+    fn read_spsr(&self) -> CPSR {
+        use Mode::*;
+        match self.mode {
+            USR => CPSR::default(),
+            FIQ => self.fiq_spsr,
+            IRQ => self.irq_spsr,
+            UND => self.und_spsr,
+            SVC => self.svc_spsr,
+            ABT => self.abt_spsr,
+        }
+    }
+    fn write_spsr(&mut self, data: CPSR) {
+        use Mode::*;
+        match self.mode {
+            USR => return,
+            FIQ => self.fiq_spsr = data,
+            IRQ => self.irq_spsr = data,
+            UND => self.und_spsr = data,
+            SVC => self.svc_spsr = data,
+            ABT => self.abt_spsr = data,
+        }
+    }
+
     fn trigger_exception(&mut self, exception: Exception) {
         use Exception::*;
         match exception {
@@ -82,8 +109,11 @@ impl ARMCore for ARM7TDMI {
                 self.cpsr.insert(CPSR::I | CPSR::F);
             },
             DataAbort => {
+                self.abt_regs[0] = self.regs[13];
+                self.abt_regs[1] = self.regs[14];
                 self.regs[LINK_REG] = self.regs[PC_REG];
                 self.regs[PC_REG] = 0x0000_0010;
+                self.abt_spsr = self.cpsr;
 
                 self.mode = Mode::ABT;
                 self.cpsr.set_mode(Mode::ABT);
@@ -120,8 +150,11 @@ impl ARMCore for ARM7TDMI {
                 self.cpsr.insert(CPSR::I);
             },
             PrefetchAbort => {
+                self.abt_regs[0] = self.regs[13];
+                self.abt_regs[1] = self.regs[14];
                 self.regs[LINK_REG] = self.regs[PC_REG];
                 self.regs[PC_REG] = 0x0000_000C;
+                self.abt_spsr = self.cpsr;
 
                 self.mode = Mode::ABT;
                 self.cpsr.set_mode(Mode::ABT);
@@ -183,6 +216,11 @@ impl ARMCore for ARM7TDMI {
                 self.cpsr = self.svc_spsr;
                 self.regs[13] = self.svc_regs[0];
                 self.regs[14] = self.svc_regs[1];
+            },
+            ABT => {
+                self.cpsr = self.abt_spsr;
+                self.regs[13] = self.abt_regs[0];
+                self.regs[14] = self.abt_regs[1];
             }
         }
         self.mode = USR;
