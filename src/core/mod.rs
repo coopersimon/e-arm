@@ -6,6 +6,7 @@ mod utils;
 
 use bitflags::bitflags;
 use crate::common::{bit, bits};
+use crate::memory::Mem32;
 
 pub use armv4::ARMv4;
 

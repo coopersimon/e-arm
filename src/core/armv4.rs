@@ -5,6 +5,7 @@ use super::{
     *
 };
 use crate::common::*;
+use crate::memory::Mem32;
 
 /*mod Cond {
     const EQ: u32 = 0;     // Z set
@@ -24,7 +25,7 @@ use crate::common::*;
     const AL: u32 = 14;    // Always
 }*/
 
-pub trait ARMv4: ARMCore {
+pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode and execute the instruction.
     fn execute_instruction(&mut self, i: u32) {
         const BRANCH: u32 = bits(24, 27);
@@ -46,6 +47,8 @@ pub trait ARMv4: ARMCore {
                 self.exec_mul(i);
             } else if (i & DATA_PROC) == 0 {
                 self.data_proc(i);
+            } else if (i & DATA_PROC) == (1 << 26) {
+                self.load_store(i);
             } else {
                 self.trigger_exception(Exception::UndefinedInstruction);
             }
@@ -193,6 +196,7 @@ pub trait ARMv4: ARMCore {
         }
         // Register value with optional shift:
         let r_val = self.read_reg((i & 0xF) as usize);
+        let shift_type = (i >> 5) & 3;
             // Shift by register:
         let shift = if test_bit(i, 4) {
             let shift_reg = (i >> 8) & 0xF;
@@ -203,7 +207,7 @@ pub trait ARMv4: ARMCore {
             let shift_amount = (i >> 7) & 0x1F;
             // Special shift cases when the immediate is 0:
             if shift_amount == 0 {
-                return match (i >> 5) & 3 {
+                return match shift_type {
                     0 => (r_val, None),
                     1 => (0, Some(test_bit(r_val, 31))),
                     2 => ((r_val as i32).wrapping_shr(31) as u32, Some(test_bit(r_val, 31))),
@@ -217,7 +221,7 @@ pub trait ARMv4: ARMCore {
             shift_amount
         };
         // TODO: the following need to be accurate when reg shift > 31
-        match (i >> 5) & 3 {
+        match shift_type {
             0 => (r_val.wrapping_shl(shift), Some(test_bit(r_val, (32 - shift) as usize))),
             1 => (r_val.wrapping_shr(shift), Some(test_bit(r_val, (shift - 1) as usize))),
             2 => ((r_val as i32).wrapping_shr(shift) as u32, Some(test_bit(r_val, (shift - 1) as usize))),
@@ -242,6 +246,80 @@ pub trait ARMv4: ARMCore {
                 }
                 self.write_cpsr(cpsr);
             }
+        }
+    }
+
+    /// Decode a load or store instruction.
+    fn load_store(&mut self, i: u32) {
+        let base_reg = {
+            const SHIFT: usize = 16;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let data_reg = {
+            const SHIFT: usize = 12;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let offset = self.offset(i);
+
+        let base_addr = if base_reg == PC_REG {
+            self.read_reg(base_reg).wrapping_add(8)
+        } else {
+            self.read_reg(base_reg)
+        };
+        let offset_addr = if test_bit(i, 23) {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let pre_index = test_bit(i, 24);
+        let transfer_addr = if pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        if test_bit(i, 20) {
+            self.ldr(test_bit(i, 22), transfer_addr, data_reg);
+        } else {
+            self.str(test_bit(i, 22), transfer_addr, data_reg);
+        }
+
+        if !pre_index || test_bit(i, 21) {
+            // Write offset address back into base register.
+            self.write_reg(base_reg, offset_addr);
+        }
+    }
+
+    /// Calculate the offset of a load/store instruction.
+    fn offset(&mut self, i: u32) -> u32 {
+        // Immediate offset:
+        if !test_bit(i, 25) {
+            return i & 0xFFF;
+        }
+        // Register shifted by immediate:
+        let r_val = self.read_reg((i & 0xF) as usize);
+        let shift_amount = (i >> 7) & 0x1F;
+        let shift_type = (i >> 5) & 3;
+        if shift_amount == 0 {
+            return match shift_type {
+                0 => r_val,
+                1 => 0,
+                2 => (r_val as i32).wrapping_shr(31) as u32,
+                3 => {  // RRX #1
+                    let carry = if self.read_cpsr().contains(CPSR::C) {bit(31)} else {0};
+                    (r_val >> 1) | carry
+                },
+                _ => unreachable!()
+            };
+        }
+        match shift_type {
+            0 => r_val.wrapping_shl(shift_amount),
+            1 => r_val.wrapping_shr(shift_amount),
+            2 => (r_val as i32).wrapping_shr(shift_amount) as u32,
+            3 => r_val.rotate_right(shift_amount),
+            _ => unreachable!()
         }
     }
 
@@ -489,7 +567,7 @@ pub trait ARMv4: ARMCore {
     fn msr(&mut self, spsr: bool, i: u32) {
         let mask = utils::fsxc_mask(i);
         let data = if test_bit(i, 25) { // Immediate
-            let shift = (i & 0xF00) >> 7;
+            let shift = (i >> 7) & 0x1E;
             let imm = i & 0xFF;
             imm.rotate_right(shift)
         } else {
@@ -507,7 +585,29 @@ pub trait ARMv4: ARMCore {
     }
 
     /// LDR
-    fn ldr(&mut self) {
-        
+    /// Load a single word or byte from memory and store it in a register.
+    fn ldr(&mut self, byte: bool, addr: u32, dest_reg: usize) {
+        let data = if byte {
+            let data_byte = self.load_byte(addr);
+            data_byte as u32
+        } else {
+            self.load_word(addr)
+        };
+        self.write_reg(dest_reg, data);
+    }
+
+    /// STR
+    /// Store a single word or byte into memory.
+    fn str(&mut self, byte: bool, addr: u32, src_reg: usize) {
+        let data = if src_reg == PC_REG {
+            self.read_reg(src_reg).wrapping_add(12)
+        } else {
+            self.read_reg(src_reg)
+        };
+        if byte {
+            self.store_byte(addr, data as u8);
+        } else {
+            self.store_word(addr, data);
+        }
     }
 }

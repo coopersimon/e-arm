@@ -9,8 +9,9 @@ use crate::core::{
     ARMCore,
     ARMv4
 };
+use crate::memory::{Mem, Mem32};
 
-pub struct ARM7TDMI {
+pub struct ARM7TDMI<M: Mem32> {
     mode: Mode,
 
     regs: [u32; 16],
@@ -27,14 +28,14 @@ pub struct ARM7TDMI {
     abt_spsr: SPSR,
     svc_spsr: SPSR,
 
-    // memory...
+    mem: M,
     
     // cycle counting
     cycles: usize,
 }
 
-impl ARM7TDMI {
-    pub fn new() -> Self {
+impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
+    pub fn new(mem: M) -> Self {
         Self {
             mode: Mode::USR,
             regs: [0; 16],
@@ -51,13 +52,34 @@ impl ARM7TDMI {
             abt_spsr: Default::default(),
             svc_spsr: Default::default(),
 
+            mem: mem,
+
             cycles: 0,
         }
     }
-
 }
 
-impl ARMCore for ARM7TDMI {
+impl<M: Mem32<Addr = u32>> Mem for ARM7TDMI<M> {
+    type Addr = u32;
+
+    fn load_byte(&mut self, addr: Self::Addr) -> u8 {
+        self.mem.load_byte(addr)
+    }
+    fn store_byte(&mut self, addr: Self::Addr, data: u8) {
+        self.mem.store_byte(addr, data);
+    }
+}
+
+impl<M: Mem32<Addr = u32>> Mem32 for ARM7TDMI<M> {
+    fn load_word(&mut self, addr: Self::Addr) -> u32 {
+        self.mem.load_word(addr)
+    }
+    fn store_word(&mut self, addr: Self::Addr, data: u32) {
+        self.mem.store_word(addr, data);
+    }
+}
+
+impl<M: Mem32> ARMCore for ARM7TDMI<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -231,4 +253,4 @@ impl ARMCore for ARM7TDMI {
     }
 }
 
-impl ARMv4 for ARM7TDMI {}
+impl<M: Mem32<Addr = u32>> ARMv4 for ARM7TDMI<M> {}

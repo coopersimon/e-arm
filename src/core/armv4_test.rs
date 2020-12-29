@@ -1,5 +1,6 @@
 // TODO: use test core instead of this one.
 use crate::core::*;
+use crate::memory::*;
 
 struct TestARM4Core {
     regs: [u32; 16],
@@ -7,22 +8,38 @@ struct TestARM4Core {
     cpsr: CPSR,
     spsr: CPSR,
 
+    memory: Vec<u8>,
+
     cycles: usize,
 }
 
-
 impl TestARM4Core {
     pub fn new() -> Self {
+        let mem = (0..1024*64).map(|i| i as u8).collect::<Vec<_>>();
         Self {
             regs: [0; 16],
 
             cpsr: Default::default(),
             spsr: Default::default(),
 
+            memory: mem,
+
             cycles: 0,
         }
     }
 }
+
+impl Mem for TestARM4Core {
+    type Addr = u32;
+
+    fn load_byte(&mut self, addr: Self::Addr) -> u8 {
+        self.memory[addr as usize]
+    }
+    fn store_byte(&mut self, addr: Self::Addr, data: u8) {
+        self.memory[addr as usize] = data;
+    }
+}
+impl Mem32 for TestARM4Core{}
 
 impl ARMCore for TestARM4Core {
     fn read_reg(&self, n: usize) -> u32 {
@@ -682,3 +699,80 @@ fn test_msr() {
         in_data.run_test(out_data);
     }
 }
+
+#[test]
+fn test_ldr() {
+    let data = vec![
+        (
+            // LDR R0, [R1]: Cond=AL, I=0, P=0, U=0, B=0, T=0, L=1, Rn=1, Rd=0, Imm=0
+            TestIn {
+                regs: vec![0x12, 0x45],
+                cpsr: None,
+                instr: 0xE411_0000
+            },
+            TestOut {
+                regs: vec![Some(0x48_47_46_45), Some(0x45)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDR R0, [R1, #8]!: Cond=AL, I=0, P=1, U=1, B=0, W=1, L=1, Rn=1, Rd=0, Imm=8
+            TestIn {
+                regs: vec![0x12, 0x45],
+                cpsr: None,
+                instr: 0xE5B1_0008
+            },
+            TestOut {
+                regs: vec![Some(0x50_4F_4E_4D), Some(0x4D)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDR R0, [R1] #-8: Cond=AL, I=0, P=0, U=0, B=0, T=0, L=1, Rn=0, Rd=1, Imm=8
+            TestIn {
+                regs: vec![0x12, 0x45],
+                cpsr: None,
+                instr: 0xE410_1008
+            },
+            TestOut {
+                regs: vec![Some(0xA), Some(0x15_14_13_12)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDR R0, [R1, {R2, LSL #1}]: Cond=AL, I=1, P=1, U=1, B=0, W=0, L=1, Rn=0, Rd=1, Is=1, Type=LSL, Rm=2
+            TestIn {
+                regs: vec![0x12, 0x45, 0x10],
+                cpsr: None,
+                instr: 0xE790_1082
+            },
+            TestOut {
+                regs: vec![Some(0x12), Some(0x35_34_33_32), Some(0x10)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDRB R0, [R1, {R2, LSR #1}]!: Cond=AL, I=1, P=1, U=1, B=1, W=1, L=1, Rn=0, Rd=1, Is=1, Type=LSR, Rm=2
+            TestIn {
+                regs: vec![0x12, 0x45, 0x10],
+                cpsr: None,
+                instr: 0xE7F0_10A2
+            },
+            TestOut {
+                regs: vec![Some(0x1A), Some(0x1A), Some(0x10)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        )
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}
+
+// TODO: test str
