@@ -47,12 +47,14 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
                 if (i & MUL_LO) == (0b1001 << 4) {
                     self.exec_mul(i);
                 } else {
-                    self.halfword(i);
+                    self.transfer_halfword(i);
                 }
+            } else if (i & MUL_HI) == (0b100 << 25) {
+                self.transfer_multiple(i);
             } else if (i & DATA_PROC) == 0 {
                 self.data_proc(i);
             } else if (i & DATA_PROC) == (1 << 26) {
-                self.load_store(i);
+                self.transfer(i);
             } else {
                 self.trigger_exception(Exception::UndefinedInstruction);
             }
@@ -254,7 +256,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a load or store instruction.
-    fn load_store(&mut self, i: u32) {
+    fn transfer(&mut self, i: u32) {
         let base_reg = {
             const SHIFT: usize = 16;
             const MASK: u32 = 0xF;
@@ -328,7 +330,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a load or store halfword instruction.
-    fn halfword(&mut self, i: u32) {
+    fn transfer_halfword(&mut self, i: u32) {
         let base_reg = {
             const SHIFT: usize = 16;
             const MASK: u32 = 0xF;
@@ -378,6 +380,47 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         } else {
             // Register offset:
             self.read_reg((i & 0xF) as usize)
+        }
+    }
+
+    /// Decode a transfer multiple instruction.
+    /// Writes registers low-high into low-high addresses.
+    fn transfer_multiple(&mut self, i: u32) {
+        let base_reg = {
+            const SHIFT: usize = 16;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        if base_reg == PC_REG {
+            self.trigger_exception(Exception::UndefinedInstruction);
+            return;
+        }
+        let base_addr = self.read_reg(base_reg);
+
+        let data_regs = i & 0xFFFF;
+        let offset = data_regs.count_ones() * 4;
+        let increment = test_bit(i, 23);
+        // Address to start transferring, and address to write back into register.
+        // The lowest address is always the start address.
+        let (transfer_addr, writeback_addr) = if !increment {
+            let low_addr = base_addr.wrapping_sub(offset);
+            (low_addr, low_addr)
+        } else {
+            (base_addr, base_addr.wrapping_add(offset))
+        };
+
+        // Add before load/store.
+        let pre_index = test_bit(i, 24) == increment;
+
+        if test_bit(i, 20) {
+            self.ldm(transfer_addr, data_regs, pre_index);
+        } else {
+            self.stm(transfer_addr, data_regs, pre_index);
+        }
+
+        if test_bit(i, 21) {
+            // Write offset address back into base register.
+            self.write_reg(base_reg, writeback_addr);
         }
     }
 
@@ -685,5 +728,53 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             self.read_reg(src_reg)
         };
         self.store_halfword(addr, data as u16);
+    }
+
+    /// LDM
+    /// Block load from memory into registers.
+    /// Start from the base address (addr). Load each register in low-high.
+    /// Add 4 to the address before loading if pre == true.
+    fn ldm(&mut self, mut addr: u32, regs: u32, pre: bool) {
+        if pre {
+            for reg in 0..16 {
+                if test_bit(regs, reg) {
+                    addr += 4;
+                    let data = self.load_word(addr);
+                    self.write_reg(reg, data);
+                }
+            }
+        } else {
+            for reg in 0..16 {
+                if test_bit(regs, reg) {
+                    let data = self.load_word(addr);
+                    self.write_reg(reg, data);
+                    addr += 4;
+                }
+            }
+        }
+    }
+
+    /// STM
+    /// Block store from registers into memory.
+    /// Start from the base address (addr). Store each register in low-high.
+    /// Add 4 to the address before storing if pre == true.
+    fn stm(&mut self, mut addr: u32, regs: u32, pre: bool) {
+        if pre {
+            for reg in 0..16 {
+                if test_bit(regs, reg) {
+                    addr += 4;
+                    let data = self.read_reg(reg);
+                    self.store_word(addr, data);
+                }
+            }
+        } else {
+            for reg in 0..16 {
+                if test_bit(regs, reg) {
+                    let data = self.read_reg(reg);
+                    self.store_word(addr, data);
+                    addr += 4;
+                }
+            }
+        }
     }
 }

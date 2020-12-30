@@ -825,3 +825,73 @@ fn test_ldrh() {
         in_data.run_test(out_data);
     }
 }
+
+#[test]
+fn test_ldm() {
+    let data = vec![
+        (
+            // LDMIB R10!, {R0-R9}: Cond=AL, P=1, U=1, S=0, W=1, L=1, Rn=10, Rlist=0x03FF
+            TestIn {
+                regs: vec![0x10, 0x12, 0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x2C],
+                cpsr: None,
+                instr: 0xE9BA03FF
+            },
+            TestOut {
+                regs: vec![Some(0x2B_2A_29_28), Some(0x2F_2E_2D_2C), Some(0x33_32_31_30), Some(0x37_36_35_34), Some(0x3B_3A_39_38),
+                    Some(0x3F_3E_3D_3C), Some(0x43_42_41_40), Some(0x47_46_45_44), Some(0x4B_4A_49_48), Some(0x4F_4E_4D_4C),
+                    Some(0x4C), Some(0x26), Some(0x28), Some(0x2A), Some(0x2C)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDMIA R4, {R0-R3}: Cond=AL, P=0, U=1, S=0, W=0, L=1, Rn=4, Rlist=0x000F
+            TestIn {
+                regs: vec![0x10, 0x12, 0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x2C],
+                cpsr: None,
+                instr: 0xE894000F
+            },
+            TestOut {
+                regs: vec![Some(0x1B_1A_19_18), Some(0x1F_1E_1D_1C), Some(0x23_22_21_20), Some(0x27_26_25_24), Some(0x18),
+                    Some(0x1A), Some(0x1C), Some(0x1E), Some(0x20), Some(0x22),
+                    Some(0x24), Some(0x26), Some(0x28), Some(0x2A), Some(0x2C)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDMDB R5, {R2-R4}: Cond=AL, P=1, U=0, S=0, W=0, L=1, Rn=5, Rlist=0x001C
+            TestIn {
+                regs: vec![0x10, 0x12, 0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x2C],
+                cpsr: None,
+                instr: 0xE915001C
+            },
+            TestOut {
+                regs: vec![Some(0x10), Some(0x12), Some(0x11_10_0F_0E), Some(0x15_14_13_12), Some(0x19_18_17_16),
+                    Some(0x1A), Some(0x1C), Some(0x1E), Some(0x20), Some(0x22),
+                    Some(0x24), Some(0x26), Some(0x28), Some(0x2A), Some(0x2C)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDMDA R12!, {R0-R3}: Cond=AL, P=0, U=0, S=0, W=1, L=1, Rn=12, Rlist=0x000F 28
+            TestIn {
+                regs: vec![0x10, 0x12, 0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x2C],
+                cpsr: None,
+                instr: 0xE83C000F
+            },
+            TestOut {
+                regs: vec![Some(0x1F_1E_1D_1C), Some(0x23_22_21_20), Some(0x27_26_25_24), Some(0x2B_2A_29_28), Some(0x18),
+                    Some(0x1A), Some(0x1C), Some(0x1E), Some(0x20), Some(0x22),
+                    Some(0x24), Some(0x26), Some(0x18), Some(0x2A), Some(0x2C)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        )
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}
