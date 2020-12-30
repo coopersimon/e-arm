@@ -776,3 +776,52 @@ fn test_ldr() {
 }
 
 // TODO: test str
+
+#[test]
+fn test_ldrh() {
+    let data = vec![
+        (
+            // LDRH R0, [R1], #-8: Cond=AL, P=0, U=0, I=1, L=1, Rn=1, Rd=0, Imm=8
+            TestIn {
+                regs: vec![0x12, 0x45],
+                cpsr: None,
+                instr: 0xE05100B8
+            },
+            TestOut {
+                regs: vec![Some(0x46_45), Some(0x3D)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDRH R0, [R1, #33]!: Cond=AL, P=1, U=1, I=1, W=1, L=1, Rn=1, Rd=0, Imm=4
+            TestIn {
+                regs: vec![0x33, 0x66],
+                cpsr: None,
+                instr: 0xE1F102B1
+            },
+            TestOut {
+                regs: vec![Some(0x88_87), Some(0x87)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // LDRH R1, [R0, R2]: Cond=AL, P=1, U=1, I=0, W=0, L=1, Rn=0, Rd=1, Rm=2
+            TestIn {
+                regs: vec![0x10, 0x11, 0x16],
+                cpsr: None,
+                instr: 0xE19010B2
+            },
+            TestOut {
+                regs: vec![Some(0x10), Some(0x27_26), Some(0x16)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        )
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}

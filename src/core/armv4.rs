@@ -43,8 +43,12 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
                 self.bl(i);
             } else if (i & bits(8, 27)) == (0b0001_0010_1111_1111_1111_0001 << 4) {
                 self.bx(i);
-            } else if (i & MUL_HI) == 0 && (i & MUL_LO) == (0b1001 << 4) {
-                self.exec_mul(i);
+            } else if (i & MUL_HI) == 0 {
+                if (i & MUL_LO) == (0b1001 << 4) {
+                    self.exec_mul(i);
+                } else {
+                    self.halfword(i);
+                }
             } else if (i & DATA_PROC) == 0 {
                 self.data_proc(i);
             } else if (i & DATA_PROC) == (1 << 26) {
@@ -293,7 +297,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Calculate the offset of a load/store instruction.
-    fn offset(&mut self, i: u32) -> u32 {
+    fn offset(&self, i: u32) -> u32 {
         // Immediate offset:
         if !test_bit(i, 25) {
             return i & 0xFFF;
@@ -320,6 +324,60 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             2 => (r_val as i32).wrapping_shr(shift_amount) as u32,
             3 => r_val.rotate_right(shift_amount),
             _ => unreachable!()
+        }
+    }
+
+    /// Decode a load or store halfword instruction.
+    fn halfword(&mut self, i: u32) {
+        let base_reg = {
+            const SHIFT: usize = 16;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let data_reg = {
+            const SHIFT: usize = 12;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let offset = self.halfword_offset(i);
+
+        let base_addr = if base_reg == PC_REG {
+            self.read_reg(base_reg).wrapping_add(8)
+        } else {
+            self.read_reg(base_reg)
+        };
+        let offset_addr = if test_bit(i, 23) {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let pre_index = test_bit(i, 24);
+        let transfer_addr = if pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        if test_bit(i, 20) {
+            self.ldrh(transfer_addr, data_reg);
+        } else {
+            self.strh(transfer_addr, data_reg);
+        }
+
+        if !pre_index || test_bit(i, 21) {
+            // Write offset address back into base register.
+            self.write_reg(base_reg, offset_addr);
+        }
+    }
+
+    /// Calculate the offset of a halfword load/store instruction.
+    fn halfword_offset(&self, i: u32) -> u32 {
+        if test_bit(i, 22) {
+            // Immediate offset:
+            ((i >> 4) & 0xF0) | (i & 0xF)
+        } else {
+            // Register offset:
+            self.read_reg((i & 0xF) as usize)
         }
     }
 
@@ -609,5 +667,23 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         } else {
             self.store_word(addr, data);
         }
+    }
+
+    /// LDRH
+    /// Load 2 bytes from memory.
+    fn ldrh(&mut self, addr: u32, dest_reg: usize) {
+        let data = self.load_halfword(addr) as u32;
+        self.write_reg(dest_reg, data);
+    }
+
+    /// STRH
+    /// Store 2 bytes into memory.
+    fn strh(&mut self, addr: u32, src_reg: usize) {
+        let data = if src_reg == PC_REG {
+            self.read_reg(src_reg).wrapping_add(12)
+        } else {
+            self.read_reg(src_reg)
+        };
+        self.store_halfword(addr, data as u16);
     }
 }

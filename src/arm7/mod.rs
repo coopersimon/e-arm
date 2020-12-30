@@ -71,6 +71,13 @@ impl<M: Mem32<Addr = u32>> Mem for ARM7TDMI<M> {
 }
 
 impl<M: Mem32<Addr = u32>> Mem32 for ARM7TDMI<M> {
+    fn load_halfword(&mut self, addr: Self::Addr) -> u16 {
+        self.mem.load_halfword(addr)
+    }
+    fn store_halfword(&mut self, addr: Self::Addr, data: u16) {
+        self.mem.store_halfword(addr, data);
+    }
+
     fn load_word(&mut self, addr: Self::Addr) -> u32 {
         self.mem.load_word(addr)
     }

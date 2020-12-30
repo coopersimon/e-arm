@@ -20,6 +20,20 @@ pub const fn test_bit(val: u32, n: usize) -> bool {
     (val & bit(n)) != 0
 }
 
+/// Construct a halfword from bytes (high to low).
+pub const fn make_16(byte_1: u8, byte_0: u8) -> u16 {
+    ((byte_1 as u16) << 8) |
+    (byte_0 as u16)
+}
+
+/// Deconstruct a halfword into bytes (high to low).
+pub const fn from_16(val: u16) -> [u8; 2] {
+    [
+        (val >> 8) as u8,
+        val as u8
+    ]
+}
+
 /// Construct a word from bytes (high to low).
 pub const fn make_32(byte_3: u8, byte_2: u8, byte_1: u8, byte_0: u8) -> u32 {
     ((byte_3 as u32) << 24) |
