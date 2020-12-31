@@ -492,12 +492,12 @@ fn test_rsb() {
             // RSBS R1, R0, #0x1F00: Cond=AL, I=1, Instr=0, S=1, Rn=0, Rd=1, Rot=24, Imm=1F
             TestIn {
                 regs: vec![0x1F01],
-                cpsr: None,
+                cpsr: Some(CPSR::C),
                 instr: 0xE2701C1F
             },
             TestOut {
                 regs: vec![None, Some(0xFFFFFFFF)],
-                cpsr: CPSR::C | CPSR::N,
+                cpsr: CPSR::N,
                 cycles: None,
             }
         ),

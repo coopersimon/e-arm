@@ -28,35 +28,17 @@ use crate::memory::Mem32;
 pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode and execute the instruction.
     fn execute_instruction(&mut self, i: u32) {
-        const BRANCH: u32 = bits(24, 27);
-        const MUL_HI: u32 = bits(25, 27);
-        const MUL_LO: u32 = bits(4, 7);
-        const DATA_PROC: u32 = bits(26, 27);
-
+        const COPROC: u32 = 0b11 << 26;
+        const BRANCH: u32 = 0b10 << 26;
+        const TRANSFER: u32 = 0b01 << 26;
+        const ALU: u32 = 0b00 << 26;
         if self.check_cond(i) {
-            // Decode
-            if (i & BRANCH) == (0b1111 << 24) {
-                self.swi();
-            } else if (i & BRANCH) == (0b1010 << 24) {
-                self.b(i);
-            } else if (i & BRANCH) == (0b1011 << 24) {
-                self.bl(i);
-            } else if (i & bits(8, 27)) == (0b0001_0010_1111_1111_1111_0001 << 4) {
-                self.bx(i);
-            } else if (i & MUL_HI) == 0 {
-                if (i & MUL_LO) == (0b1001 << 4) {
-                    self.exec_mul(i);
-                } else {
-                    self.transfer_halfword(i);
-                }
-            } else if (i & MUL_HI) == (0b100 << 25) {
-                self.transfer_multiple(i);
-            } else if (i & DATA_PROC) == 0 {
-                self.data_proc(i);
-            } else if (i & DATA_PROC) == (1 << 26) {
-                self.transfer(i);
-            } else {
-                self.trigger_exception(Exception::UndefinedInstruction);
+            match i & bits(26, 27) {
+                COPROC      => self.decode_coproc(i),
+                BRANCH      => self.decode_branch(i),
+                TRANSFER    => self.decode_transfer(i),
+                ALU         => self.decode_alu(i),
+                _ => unreachable!(),
             }
         }
     }
@@ -105,8 +87,103 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     // Decoding functions
 
+    /// Decode a coprocessor or SWI instruction.
+    /// i has the value cccc11...
+    fn decode_coproc(&mut self, i: u32) {
+        if ((i >> 24) & 0xF) == 0xF {
+            self.swi();
+        }
+    }
+
+    /// Decode a branch or block transfer instruction.
+    /// i has the value cccc10...
+    fn decode_branch(&mut self, i: u32) {
+        if test_bit(i, 25) {
+            if test_bit(i, 24) {
+                self.b(i);
+            } else {
+                self.bl(i);
+            }
+        } else {
+            self.transfer_multiple(i);
+        }
+    }
+
+    /// Decode a single transfer instruction (load or store).
+    /// i has the value cccc01...
+    fn decode_transfer(&mut self, i: u32) {
+        let base_reg = {
+            const SHIFT: usize = 16;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let data_reg = {
+            const SHIFT: usize = 12;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let offset = self.offset(i);
+
+        let base_addr = if base_reg == PC_REG {
+            self.read_reg(base_reg).wrapping_add(8)
+        } else {
+            self.read_reg(base_reg)
+        };
+        let offset_addr = if test_bit(i, 23) {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let pre_index = test_bit(i, 24);
+        let transfer_addr = if pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        if test_bit(i, 20) {
+            self.ldr(test_bit(i, 22), transfer_addr, data_reg);
+        } else {
+            self.str(test_bit(i, 22), transfer_addr, data_reg);
+        }
+
+        if !pre_index || test_bit(i, 21) {
+            // Write offset address back into base register.
+            self.write_reg(base_reg, offset_addr);
+        }
+    }
+
+    /// Decode an ALU instruction.
+    /// i has the value cccc00...
+    fn decode_alu(&mut self, i: u32) {
+        // If bit 25 is 0, then bits 7 and 4 can determine if it's an extension instruction.
+        if !test_bit(i, 25) && test_bit(i, 7) && test_bit(i, 4) {   // TODO: optimise this check
+            self.decode_other(i);
+        } else {
+            self.decode_data_proc(i);
+        }
+    }
+
+    /// Decode extended transfers, SWP and multiplication.
+    /// All of these instructions have bit25 = 0 and bits7 and 4 = 1.
+    /// The exact instruction depends on the value of bits 6 and 5.
+    fn decode_other(&mut self, i: u32) {
+        const HALFWORD: u32 = 0b01 << 5;
+        const OTHER: u32 = 0b00 << 5;
+        match i & bits(5, 6) {
+            HALFWORD => self.decode_transfer_halfword(i),
+            OTHER if test_bit(i, 24) => if !test_bit(i, 20) {
+                self.swp(i)
+            } else {
+                self.undefined()
+            },
+            OTHER => self.decode_multiply(i),
+            _ => self.undefined(),
+        }
+    }
+
     /// Decode a multiply instruction.
-    fn exec_mul(&mut self, i: u32) {
+    fn decode_multiply(&mut self, i: u32) {
         let set_flags = test_bit(i, 20);
         let rd = {
             const SHIFT: usize = 16;
@@ -137,62 +214,88 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a data processing instruction.
-    fn data_proc(&mut self, i: u32) {
+    fn decode_data_proc(&mut self, i: u32) {
         let set_flags = test_bit(i, 20);
-        const fn rn(i: u32) -> usize {
+        let rn = {
             const SHIFT: usize = 16;
             const MASK: u32 = 0xF;
             ((i >> SHIFT) & MASK) as usize
         };
-        const fn rd(i: u32) -> usize {
+        let rd = {
             const SHIFT: usize = 12;
             const MASK: u32 = 0xF;
             ((i >> SHIFT) & MASK) as usize
         };
         let (op2, shift_carry) = self.op2(i);
 
+        let compare = || {
+            set_flags && (rd == 0)
+        };
+
         const SHIFT: usize = 21;
         const MASK: u32 = 0xF;
         match (i >> SHIFT) & MASK {
-            0x0 => self.and(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // AND
-            0x1 => self.eor(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // EOR
-            0x2 => self.sub(set_flags, rd(i), self.read_reg(rn(i)), op2),               // SUB
-            0x3 => self.sub(set_flags, rd(i), op2, self.read_reg(rn(i))),               // RSB
-            0x4 => self.add(set_flags, rd(i), self.read_reg(rn(i)), op2),               // ADD
-            0x5 => self.adc(set_flags, rd(i), self.read_reg(rn(i)), op2),               // ADC
-            0x6 => self.adc(set_flags, rd(i), self.read_reg(rn(i)), !op2),              // SBC
-            0x7 => self.adc(set_flags, rd(i), op2, !self.read_reg(rn(i))),              // RSC
-            0x8 => if set_flags {
-                self.tst(self.read_reg(rn(i)), op2, shift_carry)                        // TST
+            0x0 => self.and(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // AND
+            0x1 => self.eor(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // EOR
+            0x2 => self.sub(set_flags, rd, self.read_reg(rn), op2),               // SUB
+            0x3 => self.sub(set_flags, rd, op2, self.read_reg(rn)),               // RSB
+            0x4 => self.add(set_flags, rd, self.read_reg(rn), op2),               // ADD
+            0x5 => self.adc(set_flags, rd, self.read_reg(rn), op2),               // ADC
+            0x6 => self.adc(set_flags, rd, self.read_reg(rn), !op2),              // SBC
+            0x7 => self.adc(set_flags, rd, op2, !self.read_reg(rn)),              // RSC
+            0xC => self.orr(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // ORR
+            0xE => self.bic(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // BIC
+            0x8 => if compare() {
+                self.tst(self.read_reg(rn), op2, shift_carry)                     // TST
             } else {
-                self.mrs(false, rd(i))
+                self.decode_ext_mode(i, rn, rd, false, false)
             },
-            0x9 => if set_flags {
-                self.teq(self.read_reg(rn(i)), op2, shift_carry)                        // TEQ
+            0x9 => if compare() {
+                self.teq(self.read_reg(rn), op2, shift_carry)                     // TEQ
             } else {
-                self.msr(false, i)
+                self.decode_ext_mode(i, rn, rd, true, false)
             },
-            0xA => if set_flags {
-                self.cmp(self.read_reg(rn(i)), op2)                                     // CMP
+            0xA => if compare() {
+                self.cmp(self.read_reg(rn), op2)                                  // CMP
             } else {
-                self.mrs(true, rd(i))
+                self.decode_ext_mode(i, rn, rd, false, true)
             },
-            0xB => if set_flags {
-                self.cmn(self.read_reg(rn(i)), op2)                                     // CMN
+            0xB => if compare() {
+                self.cmn(self.read_reg(rn), op2)                                  // CMN
             } else {
-                self.msr(true, i)
+                self.decode_ext_mode(i, rn, rd, true, true)
             },
-            0xC => self.orr(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // ORR
-            0xD => self.mov(set_flags, rd(i), op2, shift_carry),                        // MOV
-            0xE => self.bic(set_flags, rd(i), self.read_reg(rn(i)), op2, shift_carry),  // BIC
-            0xF => self.mov(set_flags, rd(i), !op2, shift_carry),                       // MVN
-            _ => unreachable!()
+            0xD => self.mov(set_flags, rd, op2, shift_carry),                     // MOV
+            0xF => self.mov(set_flags, rd, !op2, shift_carry),                    // MVN
+            _ => self.undefined(),
+        }
+    }
+
+    /// Decodes extension mode instructions.
+    /// This includes MRS, MSR and BX
+    /// This has multiple entry points so some data has already been decoded.
+    fn decode_ext_mode(&mut self, i: u32, rn: usize, rd: usize, msr: bool, spsr: bool) {
+        if msr && (rd == 0xF) {
+            if !test_bit(i, 25) {
+                match i & 0xFF0 {
+                    0xF10 if rn == 0xF => self.bx(i),
+                    0x000 => self.msr(spsr, i),
+                    _ => self.undefined(),
+                }
+            } else {
+                self.msr(spsr, i);
+            }
+        } else if !msr && (rn == 0xF) && (i & 0xFFF) == 0 {
+            self.mrs(spsr, rd);
+        } else {
+            self.undefined();
         }
     }
 
     /// Calculate the second operand of an arithmetic / logic instruction.
     /// Can involve a shift.
     /// If the carry flag should be modified for logic ops, it is returned via the second return value.
+    /// Extracts a value from the lower 12 bits based on the 25th bit.
     fn op2(&self, i: u32) -> (u32, Option<bool>) {
         // Immediate value with rotate:
         if test_bit(i, 25) {
@@ -255,49 +358,6 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         }
     }
 
-    /// Decode a load or store instruction.
-    fn transfer(&mut self, i: u32) {
-        let base_reg = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let data_reg = {
-            const SHIFT: usize = 12;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let offset = self.offset(i);
-
-        let base_addr = if base_reg == PC_REG {
-            self.read_reg(base_reg).wrapping_add(8)
-        } else {
-            self.read_reg(base_reg)
-        };
-        let offset_addr = if test_bit(i, 23) {
-            base_addr.wrapping_add(offset)  // Inc
-        } else {
-            base_addr.wrapping_sub(offset)  // Dec
-        };
-        let pre_index = test_bit(i, 24);
-        let transfer_addr = if pre_index {
-            offset_addr // Pre
-        } else {
-            base_addr   // Post
-        };
-
-        if test_bit(i, 20) {
-            self.ldr(test_bit(i, 22), transfer_addr, data_reg);
-        } else {
-            self.str(test_bit(i, 22), transfer_addr, data_reg);
-        }
-
-        if !pre_index || test_bit(i, 21) {
-            // Write offset address back into base register.
-            self.write_reg(base_reg, offset_addr);
-        }
-    }
-
     /// Calculate the offset of a load/store instruction.
     fn offset(&self, i: u32) -> u32 {
         // Immediate offset:
@@ -330,7 +390,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a load or store halfword instruction.
-    fn transfer_halfword(&mut self, i: u32) {
+    fn decode_transfer_halfword(&mut self, i: u32) {
         let base_reg = {
             const SHIFT: usize = 16;
             const MASK: u32 = 0xF;
@@ -422,6 +482,11 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             // Write offset address back into base register.
             self.write_reg(base_reg, writeback_addr);
         }
+    }
+
+    /// Called when an undefined instruction is encountered.
+    fn undefined(&mut self) {
+        self.trigger_exception(Exception::UndefinedInstruction);
     }
 
     // Logic
@@ -682,6 +747,36 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             let old_cpsr = self.read_cpsr().bits() & !mask;
             let new_cpsr = CPSR::from_bits_truncate((data & mask) | old_cpsr);
             self.write_cpsr(new_cpsr);
+        }
+    }
+
+    /// SWP
+    /// Single data swap
+    fn swp(&mut self, i: u32) {
+        let rn = {
+            const SHIFT: usize = 16;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let rd = {
+            const SHIFT: usize = 12;
+            const MASK: u32 = 0xF;
+            ((i >> SHIFT) & MASK) as usize
+        };
+        let rm = {
+            const MASK: u32 = 0xF;
+            (i & MASK) as usize
+        };
+
+        let addr = self.read_reg(rn);
+        if test_bit(i, 22) {
+            let data = self.load_byte(addr) as u32;
+            self.write_reg(rd, data);
+            self.store_byte(addr, self.read_reg(rm) as u8);
+        } else {
+            let data = self.load_word(addr);
+            self.write_reg(rd, data);
+            self.store_word(addr, self.read_reg(rm));
         }
     }
 
