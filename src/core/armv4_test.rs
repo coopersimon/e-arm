@@ -70,6 +70,10 @@ impl ARMCore for TestARM4Core {
         // TODO...
     }
 
+    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
+        None
+    }
+
     fn add_cycles(&mut self, cycles: usize) {
         self.cycles += cycles;
     }

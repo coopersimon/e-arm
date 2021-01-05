@@ -6,6 +6,7 @@ mod utils;
 
 use bitflags::bitflags;
 use crate::common::{bit, bits};
+use crate::coproc::Coprocessor;
 
 pub use armv4::ARMv4;
 
@@ -65,6 +66,8 @@ pub trait ARMCore {
 
     fn trigger_exception(&mut self, exception: Exception);
     fn return_from_exception(&mut self);
+
+    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
 
     fn add_cycles(&mut self, cycles: usize);
 }

@@ -90,8 +90,70 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode a coprocessor or SWI instruction.
     /// i has the value cccc11...
     fn decode_coproc(&mut self, i: u32) {
-        if ((i >> 24) & 0xF) == 0xF {
-            self.swi();
+        if test_bit(i, 25) {
+            if test_bit(i, 24) {
+                self.swi();
+            } else {
+                self.decode_coproc_op(i);
+            }
+        } else {
+            self.decode_coproc_transfer(i);
+        }
+    }
+
+    /// Decode a coprocessor register transfer or data op.
+    fn decode_coproc_op(&mut self, i: u32) {
+        let reg_n = ((i >> 16) & 0xF) as usize;
+        let reg_d = ((i >> 12) & 0xF) as usize;
+        let coproc = ((i >> 8) & 0xF) as usize;
+        let info = (i >> 5) & 0x7;
+        let reg_m = (i & 0xF) as usize;
+        if test_bit(i, 4) {
+            let op = (i >> 21) & 0x7;
+            if test_bit(i, 20) {
+                self.mrc(coproc, reg_n, reg_d, reg_m, op, info);
+            } else {
+                self.mcr(coproc, reg_n, reg_d, reg_m, op, info);
+            }
+        } else {
+            let op = (i >> 20) & 0xF;
+            self.cdp(op, reg_n, reg_d, info, reg_m, coproc);
+        }
+    }
+
+    /// Decode a coprocessor data transfer with memory.
+    fn decode_coproc_transfer(&mut self, i: u32) {
+        let base_reg = ((i >> 16) & 0xF) as usize;
+        let data_reg = ((i >> 12) & 0xF) as usize;
+        let coproc = ((i >> 8) & 0xF) as usize;
+        let offset = (i & 0xFF) << 2;
+
+        let base_addr = if base_reg == PC_REG {
+            self.read_reg(base_reg).wrapping_add(8)
+        } else {
+            self.read_reg(base_reg)
+        };
+        let offset_addr = if test_bit(i, 23) {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let pre_index = test_bit(i, 24);
+        let transfer_addr = if pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        if test_bit(i, 20) {
+            self.ldc(test_bit(i, 22), transfer_addr, coproc, data_reg);
+        } else {
+            self.stc(test_bit(i, 22), transfer_addr, coproc, data_reg);
+        }
+
+        if !pre_index || test_bit(i, 21) {
+            // Write offset address back into base register.
+            self.write_reg(base_reg, offset_addr);
         }
     }
 
@@ -112,16 +174,8 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode a single transfer instruction (load or store).
     /// i has the value cccc01...
     fn decode_transfer(&mut self, i: u32) {
-        let base_reg = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let data_reg = {
-            const SHIFT: usize = 12;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
+        let base_reg = ((i >> 16) & 0xF) as usize;
+        let data_reg = ((i >> 12) & 0xF) as usize;
         let offset = self.offset(i);
 
         let base_addr = if base_reg == PC_REG {
@@ -185,28 +239,11 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode a multiply instruction.
     fn decode_multiply(&mut self, i: u32) {
         let set_flags = test_bit(i, 20);
-        let rd = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let rn = {
-            const SHIFT: usize = 12;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let rs = {
-            const SHIFT: usize = 8;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let rm = {
-            const MASK: u32 = 0xF;
-            (i & MASK) as usize
-        };
-        const SHIFT: usize = 21;
-        const MASK: u32 = 0xF;
-        match (i >> SHIFT) & MASK {
+        let rd = ((i >> 16) & 0xF) as usize;
+        let rn = ((i >> 12) & 0xF) as usize;
+        let rs = ((i >> 8) & 0xF) as usize;
+        let rm = (i & 0xF) as usize;
+        match (i >> 21) & 0xF {
             0x0 => self.mul(set_flags, rd, rs, rm),
             0x1 => self.mla(set_flags, rd, rn, rs, rm),
             _ => unreachable!("unknown MUL instruction"),
@@ -216,25 +253,15 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode a data processing instruction.
     fn decode_data_proc(&mut self, i: u32) {
         let set_flags = test_bit(i, 20);
-        let rn = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let rd = {
-            const SHIFT: usize = 12;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
+        let rn = ((i >> 16) & 0xF) as usize;
+        let rd = ((i >> 12) & 0xF) as usize;
         let (op2, shift_carry) = self.op2(i);
 
         let compare = || {
             set_flags && (rd == 0)
         };
 
-        const SHIFT: usize = 21;
-        const MASK: u32 = 0xF;
-        match (i >> SHIFT) & MASK {
+        match (i >> 21) & 0xF {
             0x0 => self.and(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // AND
             0x1 => self.eor(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // EOR
             0x2 => self.sub(set_flags, rd, self.read_reg(rn), op2),               // SUB
@@ -391,16 +418,8 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// Decode a load or store halfword instruction.
     fn decode_transfer_halfword(&mut self, i: u32) {
-        let base_reg = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let data_reg = {
-            const SHIFT: usize = 12;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
+        let base_reg = ((i >> 16) & 0xF) as usize;
+        let data_reg = ((i >> 12) & 0xF) as usize;
         let offset = self.halfword_offset(i);
 
         let base_addr = if base_reg == PC_REG {
@@ -446,11 +465,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode a transfer multiple instruction.
     /// Writes registers low-high into low-high addresses.
     fn transfer_multiple(&mut self, i: u32) {
-        let base_reg = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
+        let base_reg = ((i >> 16) & 0xF) as usize;
         if base_reg == PC_REG {
             self.trigger_exception(Exception::UndefinedInstruction);
             return;
@@ -753,20 +768,9 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// SWP
     /// Single data swap
     fn swp(&mut self, i: u32) {
-        let rn = {
-            const SHIFT: usize = 16;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let rd = {
-            const SHIFT: usize = 12;
-            const MASK: u32 = 0xF;
-            ((i >> SHIFT) & MASK) as usize
-        };
-        let rm = {
-            const MASK: u32 = 0xF;
-            (i & MASK) as usize
-        };
+        let rn = ((i >> 16) & 0xF) as usize;
+        let rd = ((i >> 12) & 0xF) as usize;
+        let rm = (i & 0xF) as usize;
 
         let addr = self.read_reg(rn);
         if test_bit(i, 22) {
@@ -872,4 +876,55 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             }
         }
     }
+
+    // Coprocessor
+
+    /// MRC
+    /// Move from coprocessor to ARM
+    fn mrc(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) {
+        let data = if let Some(c) = self.ref_coproc(coproc) {
+            c.mrc(coproc_reg, op_reg, op, info)
+        } else {
+            0
+        };
+        self.write_reg(arm_reg, data);
+    }
+
+    /// MCR
+    /// Move from ARM to coprocessor
+    fn mcr(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) {
+        let data = self.read_reg(arm_reg);
+        if let Some(c) = self.ref_coproc(coproc) {
+            c.mcr(coproc_reg, op_reg, data, op, info);
+        }
+    }
+
+    /// STC
+    /// Store into memory from coprocessor
+    fn stc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) {
+        let data = if let Some(c) = self.ref_coproc(coproc) {
+            c.stc(transfer_len, coproc_reg)
+        } else {
+            0
+        };
+        self.store_word(addr, data);
+    }
+
+    /// LDC
+    /// Load from memory to coprocessor
+    fn ldc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) {
+        let data = self.load_word(addr);
+        if let Some(c) = self.ref_coproc(coproc) {
+            c.ldc(transfer_len, coproc_reg, data);
+        }
+    }
+
+    /// CDP
+    /// Coprocessor data operation
+    fn cdp(&mut self, op: u32, reg_n: usize, reg_d: usize, info: u32, reg_m: usize, coproc: usize) {
+        if let Some(c) = self.ref_coproc(coproc) {
+            c.cdp(op, reg_n, reg_d, info, reg_m);
+        }
+    }
+
 }

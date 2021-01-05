@@ -2,6 +2,7 @@ mod core;
 mod common;
 mod arm7;
 mod memory;
+mod coproc;
 
 pub use crate::core::{
     ARMCore, ARMv4

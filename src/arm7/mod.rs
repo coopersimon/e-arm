@@ -10,6 +10,7 @@ use crate::core::{
     ARMv4
 };
 use crate::memory::{Mem, Mem32};
+use crate::coproc::Coprocessor;
 
 pub struct ARM7TDMI<M: Mem32> {
     mode: Mode,
@@ -28,14 +29,15 @@ pub struct ARM7TDMI<M: Mem32> {
     abt_spsr: SPSR,
     svc_spsr: SPSR,
 
-    mem: M,
+    mem:    M,
+    coproc: [Option<Box<dyn Coprocessor>>; 16],
     
     // cycle counting
     cycles: usize,
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
-    pub fn new(mem: M) -> Self {
+    pub fn new(mem: M, coproc: [Option<Box<dyn Coprocessor>>; 16]) -> Self {
         Self {
             mode: Mode::USR,
             regs: [0; 16],
@@ -52,7 +54,8 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             abt_spsr: Default::default(),
             svc_spsr: Default::default(),
 
-            mem: mem,
+            mem:    mem,
+            coproc: coproc,
 
             cycles: 0,
         }
@@ -253,6 +256,10 @@ impl<M: Mem32> ARMCore for ARM7TDMI<M> {
             }
         }
         self.mode = USR;
+    }
+
+    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
+        self.coproc[coproc].as_mut()
     }
 
     fn add_cycles(&mut self, cycles: usize) {
