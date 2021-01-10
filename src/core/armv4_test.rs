@@ -610,6 +610,64 @@ fn test_sbc() {
     }
 }
 
+#[test]
+fn test_mul() {
+    let data = vec![
+        (
+            // MULS R2, R0, R1: Cond=AL, S=1, Rd=2, Rn=0, Rs=1, Rm=0
+            TestIn {
+                regs: vec![0x123, 0x456, 0x1],
+                cpsr: Some(CPSR::C | CPSR::Z),
+                instr: 0xE0120190
+            },
+            TestOut {
+                regs: vec![None, None, Some(0x4EDC2)],
+                cpsr: CPSR::default(),
+                cycles: None,
+            }
+        ),
+        (
+            // MULS R0, R0, R1: Cond=AL, S=1, Rd=0, Rn=0, Rs=1, Rm=0
+            TestIn {
+                regs: vec![0x123, 0x0, 0x1],
+                cpsr: Some(CPSR::C | CPSR::Z),
+                instr: 0xE0100190
+            },
+            TestOut {
+                regs: vec![Some(0), None, None],
+                cpsr: CPSR::Z,
+                cycles: None,
+            }
+        ),
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}
+
+#[test]
+fn test_mla() {
+    let data = vec![
+        (
+            // MLA R2, R0, R1 + R3: Cond=AL, S=1, Rd=2, Rn=3, Rs=1, Rm=0
+            TestIn {
+                regs: vec![0x123, 0x456, 0x1, 0x12345],
+                cpsr: Some(CPSR::C | CPSR::Z),
+                instr: 0xE0223190
+            },
+            TestOut {
+                regs: vec![None, None, Some(0x61107)],
+                cpsr: CPSR::C | CPSR::Z,
+                cycles: None,
+            }
+        )
+    ];
+
+    for (in_data, out_data) in data.iter() {
+        in_data.run_test(out_data);
+    }
+}
 
 
 // Test comparison

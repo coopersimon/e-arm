@@ -246,6 +246,10 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         match (i >> 21) & 0xF {
             0x0 => self.mul(set_flags, rd, rs, rm),
             0x1 => self.mla(set_flags, rd, rn, rs, rm),
+            0x4 => self.umull(set_flags, rn, rd, rs, rm),
+            0x5 => self.umlal(set_flags, rn, rd, rs, rm),
+            0x6 => self.smull(set_flags, rn, rd, rs, rm),
+            0x7 => self.smlal(set_flags, rn, rd, rs, rm),
             _ => unreachable!("unknown MUL instruction"),
         }
     }
@@ -656,10 +660,14 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         }
     }
 
+    // Multiplication
+
     /// MUL
     /// Multiply
     fn mul(&mut self, s: bool, rd: usize, rs: usize, rm: usize) {
-        let result = self.read_reg(rs).wrapping_mul(self.read_reg(rm));
+        let op1 = self.read_reg(rm);
+        let op2 = self.read_reg(rs);
+        let result = op1.wrapping_mul(op2);
         self.write_reg(rd, result);
         if s {
             let mut cpsr = self.read_cpsr();
@@ -673,12 +681,86 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// MLA
     /// Multiply and accumulate
     fn mla(&mut self, s: bool, rd: usize, rn: usize, rs: usize, rm: usize) {
-        let mul_result = self.read_reg(rs).wrapping_mul(self.read_reg(rm));
+        let op1 = self.read_reg(rm);
+        let op2 = self.read_reg(rs);
+        let mul_result = op1.wrapping_mul(op2);
         let result = mul_result.wrapping_add(self.read_reg(rn));
         self.write_reg(rd, result);
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, test_bit(result, 31));
+            cpsr.set(CPSR::Z, result == 0);
+            cpsr.remove(CPSR::C);
+            self.write_cpsr(cpsr);
+        }
+    }
+
+    /// UMULL
+    /// Unsigned long multiply
+    fn umull(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+        let op1 = self.read_reg(rm) as u64;
+        let op2 = self.read_reg(rn) as u64;
+        let result = op1.wrapping_mul(op2);
+        self.write_reg(rd_lo, lo_64(result));
+        self.write_reg(rd_hi, hi_64(result));
+        if s {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::Z, result == 0);
+            cpsr.remove(CPSR::C);
+            self.write_cpsr(cpsr);
+        }
+    }
+
+    /// UMLAL
+    /// Unsigned long multiply and accumulate
+    fn umlal(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+        let op1 = self.read_reg(rm) as u64;
+        let op2 = self.read_reg(rn) as u64;
+        let mul_result = op1.wrapping_mul(op2);
+        let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
+        let result = mul_result.wrapping_add(acc_op);
+        self.write_reg(rd_lo, lo_64(result));
+        self.write_reg(rd_hi, hi_64(result));
+        if s {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::Z, result == 0);
+            cpsr.remove(CPSR::C);
+            self.write_cpsr(cpsr);
+        }
+    }
+
+    /// SMULL
+    /// Signed long multiply
+    fn smull(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+        let op1 = (self.read_reg(rm) as i32) as i64;
+        let op2 = (self.read_reg(rn) as i32) as i64;
+        let result = op1.wrapping_mul(op2) as u64;
+        self.write_reg(rd_lo, lo_64(result));
+        self.write_reg(rd_hi, hi_64(result));
+        if s {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::Z, result == 0);
+            cpsr.remove(CPSR::C);
+            self.write_cpsr(cpsr);
+        }
+    }
+
+    /// SMLAL
+    /// Signed long multiply and accumulate
+    fn smlal(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+        let op1 = (self.read_reg(rm) as i32) as i64;
+        let op2 = (self.read_reg(rn) as i32) as i64;
+        let mul_result = op1.wrapping_mul(op2) as u64;
+        let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
+        let result = mul_result.wrapping_add(acc_op);
+        self.write_reg(rd_lo, lo_64(result));
+        self.write_reg(rd_hi, hi_64(result));
+        if s {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::N, test_bit_64(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);

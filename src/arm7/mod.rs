@@ -32,7 +32,8 @@ pub struct ARM7TDMI<M: Mem32> {
     mem:    M,
     coproc: [Option<Box<dyn Coprocessor>>; 16],
     
-    // cycle counting
+    current_i: Option<u32>,
+    next_i: Option<u32>,
     cycles: usize,
 }
 
@@ -57,8 +58,29 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             mem:    mem,
             coproc: coproc,
 
+            current_i: None,
+            next_i: None,
             cycles: 0,
         }
+    }
+
+    /// Step a single instruction.
+    /// Returns how many cycles passed.
+    pub fn step(&mut self) -> usize {
+        // Fetch
+        let i = self.load_word(self.regs[PC_REG]);
+        self.regs[PC_REG] += 4;
+        // Decode + execute
+        if let Some(i) = self.next_i {
+            self.execute_instruction(i);
+        }
+        // Shift the pipeline
+        self.next_i = self.current_i;
+        self.current_i = Some(i);
+
+        let cycles_passed = self.cycles + 1;
+        self.cycles = 0;
+        cycles_passed
     }
 }
 
