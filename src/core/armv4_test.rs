@@ -2,44 +2,86 @@
 use crate::core::*;
 use crate::memory::*;
 
+/// Construct a word from bytes (high to low).
+const fn make_32(bytes: &[u8]) -> u32 {
+    ((bytes[3] as u32) << 24) |
+    ((bytes[2] as u32) << 16) |
+    ((bytes[1] as u32) << 8) |
+    (bytes[0] as u32)
+}
+
 struct TestARM4Core {
     regs: [u32; 16],
 
     cpsr: CPSR,
     spsr: CPSR,
 
-    memory: Vec<u8>,
-
-    cycles: usize,
+    memory: Vec<u32>,
 }
 
 impl TestARM4Core {
-    pub fn new() -> Self {
-        let mem = (0..1024*64).map(|i| i as u8).collect::<Vec<_>>();
+    fn new() -> Self {
+        let data = (0..1024*64).map(|i| (i & 0xFF) as u8)
+            .collect::<Vec<_>>()
+            .chunks_exact(4)
+            .map(make_32)
+            .collect::<Vec<_>>();
         Self {
             regs: [0; 16],
 
             cpsr: Default::default(),
             spsr: Default::default(),
 
-            memory: mem,
-
-            cycles: 0,
+            memory: data,
         }
     }
 }
 
-impl Mem for TestARM4Core {
+impl Mem32 for TestARM4Core {
     type Addr = u32;
 
-    fn load_byte(&mut self, addr: Self::Addr) -> u8 {
-        self.memory[addr as usize]
+    fn load_byte(&mut self, addr: Self::Addr) -> (u8, usize) {
+        let idx = (addr >> 2) as usize;
+        let data = self.memory[idx];
+        let shift = (addr & 3) * 8;
+        let ret = (data >> shift) as u8;
+        (ret, 1)
     }
-    fn store_byte(&mut self, addr: Self::Addr, data: u8) {
-        self.memory[addr as usize] = data;
+    fn store_byte(&mut self, addr: Self::Addr, data: u8) -> usize {
+        let idx = (addr >> 2) as usize;
+        let stored = self.memory[idx];
+        let shift = (addr & 3) * 8;
+        let mask = !(0xFF << shift);
+        self.memory[idx] = (stored & mask) | ((data as u32) << shift);
+        1
+    }
+
+    fn load_halfword(&mut self, addr: Self::Addr) -> (u16, usize) {
+        let idx = (addr >> 2) as usize;
+        let data = self.memory[idx];
+        let shift = (addr & 2) * 8;
+        let ret = (data >> shift) as u16;
+        (ret, 1)
+    }
+    fn store_halfword(&mut self, addr: Self::Addr, data: u16) -> usize {
+        let idx = (addr >> 2) as usize;
+        let stored = self.memory[idx];
+        let shift = (addr & 2) * 8;
+        let mask = !(0xFFFF << shift);
+        self.memory[idx] = (stored & mask) | ((data as u32) << shift);
+        1
+    }
+
+    fn load_word(&mut self, addr: Self::Addr) -> (u32, usize) {
+        let idx = (addr >> 2) as usize;
+        (self.memory[idx], 1)
+    }
+    fn store_word(&mut self, addr: Self::Addr, data: u32) -> usize {
+        let idx = (addr >> 2) as usize;
+        self.memory[idx] = data;
+        1
     }
 }
-impl Mem32 for TestARM4Core{}
 
 impl ARMCore for TestARM4Core {
     fn read_reg(&self, n: usize) -> u32 {
@@ -73,10 +115,6 @@ impl ARMCore for TestARM4Core {
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
         None
     }
-
-    fn add_cycles(&mut self, cycles: usize) {
-        self.cycles += cycles;
-    }
 }
 
 impl ARMv4 for TestARM4Core {}
@@ -90,7 +128,7 @@ struct TestIn {
 }
 
 impl TestIn {
-    fn run_test(&self, out: &TestOut) {
+    fn run_test(&self, test_num: usize, out: &TestOut) {
         let mut cpu = TestARM4Core::new();
         for (i, val) in self.regs.iter().enumerate() {
             cpu.regs[i] = *val;
@@ -99,22 +137,24 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        cpu.execute_instruction(self.instr);
+        let cycles = cpu.execute_instruction(self.instr);
 
         for (i, val) in out.regs.iter().enumerate() {
             if let Some(assert_reg) = val {
                 if *assert_reg != cpu.regs[i] {
-                    println!("Got r{}: {:X} expected: {:X}", i, cpu.regs[i], *assert_reg);
+                    println!("{}: Got r{}: {:X} expected: {:X}", test_num, i, cpu.regs[i], *assert_reg);
                     assert!(false);
                 }
             }
         }
         if out.cpsr != cpu.cpsr {
-            println!("Got flags: {:X} expected: {:X}", cpu.cpsr.bits(), out.cpsr.bits());
+            println!("{}: Got flags: {:X} expected: {:X}", test_num, cpu.cpsr.bits(), out.cpsr.bits());
             assert!(false);
         }
-        if let Some(assert_cycles) = out.cycles {
-            assert_eq!(assert_cycles, cpu.cycles);
+
+        if out.cycles != cycles {
+            println!("{}: Got {} cycles, expected: {}", test_num, cycles, out.cycles);
+            assert!(false);
         }
     }
 }
@@ -124,7 +164,7 @@ impl TestIn {
 struct TestOut {
     regs: Vec<Option<u32>>,
     cpsr: CPSR,
-    cycles: Option<usize>,
+    cycles: usize,
 }
 
 
@@ -141,7 +181,7 @@ fn test_and() {
             TestOut {
                 regs: vec![None, None, Some(0x04040404)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -154,7 +194,7 @@ fn test_and() {
             TestOut {
                 regs: vec![None, Some(0x150000)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -167,7 +207,7 @@ fn test_and() {
             TestOut {
                 regs: vec![None, Some(0)],
                 cpsr: CPSR::Z,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -180,13 +220,13 @@ fn test_and() {
             TestOut {
                 regs: vec![None, Some(0x81819595)],
                 cpsr: CPSR::N | CPSR::C,
-                cycles: None,
+                cycles: 0,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -203,7 +243,7 @@ fn test_eor() {
             TestOut {
                 regs: vec![None, None, Some(0x91919191)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -216,7 +256,7 @@ fn test_eor() {
             TestOut {
                 regs: vec![None, Some(0x958A9595)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -229,13 +269,13 @@ fn test_eor() {
             TestOut {
                 regs: vec![None, Some(0x95959595)],
                 cpsr: CPSR::N,
-                cycles: None,
+                cycles: 0,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -252,7 +292,7 @@ fn test_orr() {
             TestOut {
                 regs: vec![None, None, Some(0x95959595)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -265,7 +305,7 @@ fn test_orr() {
             TestOut {
                 regs: vec![None, Some(0x959F9595)],
                 cpsr: CPSR::Z,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -278,7 +318,7 @@ fn test_orr() {
             TestOut {
                 regs: vec![None, Some(0x95959595)],
                 cpsr: CPSR::N,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -291,13 +331,13 @@ fn test_orr() {
             TestOut {
                 regs: vec![None, Some(0xFFFFFFFF)],
                 cpsr: CPSR::N | CPSR::C,
-                cycles: None,
+                cycles: 0,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -314,7 +354,7 @@ fn test_bic() {
             TestOut {
                 regs: vec![None, None, Some(0x11111111)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -327,7 +367,7 @@ fn test_bic() {
             TestOut {
                 regs: vec![None, Some(0x95809595)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -340,13 +380,13 @@ fn test_bic() {
             TestOut {
                 regs: vec![None, Some(0x35353535)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -365,7 +405,7 @@ fn test_add() {
             TestOut {
                 regs: vec![None, None, Some(0x579)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -378,7 +418,7 @@ fn test_add() {
             TestOut {
                 regs: vec![None, Some(0)],
                 cpsr: CPSR::C | CPSR::Z,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -391,7 +431,7 @@ fn test_add() {
             TestOut {
                 regs: vec![Some(0x100BF)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -404,13 +444,13 @@ fn test_add() {
             TestOut {
                 regs: vec![Some(0x11FFE)],
                 cpsr: CPSR::C,
-                cycles: None,
+                cycles: 1,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -427,7 +467,7 @@ fn test_sub() {
             TestOut {
                 regs: vec![None, None, Some(0xFFFFFCCD)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -440,7 +480,7 @@ fn test_sub() {
             TestOut {
                 regs: vec![None, Some(0x1FFFFFFE)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -453,7 +493,7 @@ fn test_sub() {
             TestOut {
                 regs: vec![Some(0xFF3F)],
                 cpsr: CPSR::C,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -466,13 +506,13 @@ fn test_sub() {
             TestOut {
                 regs: vec![Some(0xE000)],
                 cpsr: CPSR::C,
-                cycles: None,
+                cycles: 1,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -489,7 +529,7 @@ fn test_rsb() {
             TestOut {
                 regs: vec![None, None, Some(0x333)],
                 cpsr: CPSR::C,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -502,13 +542,13 @@ fn test_rsb() {
             TestOut {
                 regs: vec![None, Some(0xFFFFFFFF)],
                 cpsr: CPSR::N,
-                cycles: None,
+                cycles: 0,
             }
         ),
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -525,7 +565,7 @@ fn test_adc() {
             TestOut {
                 regs: vec![None, None, Some(0x57A)],
                 cpsr: CPSR::C | CPSR::Z,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -538,7 +578,7 @@ fn test_adc() {
             TestOut {
                 regs: vec![None, Some(0x0)],
                 cpsr: CPSR::C | CPSR::Z,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -551,13 +591,13 @@ fn test_adc() {
             TestOut {
                 regs: vec![None, Some(0x11)],
                 cpsr: CPSR::C,
-                cycles: None,
+                cycles: 1,
             }
         ),
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -574,7 +614,7 @@ fn test_sbc() {
             TestOut {
                 regs: vec![None, None, Some(0xFFFFFCCD)],
                 cpsr: CPSR::C | CPSR::Z,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -587,7 +627,7 @@ fn test_sbc() {
             TestOut {
                 regs: vec![None, Some(0xFFFFFFC1)],
                 cpsr: CPSR::N | CPSR::C,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -600,13 +640,13 @@ fn test_sbc() {
             TestOut {
                 regs: vec![None, Some(0x12)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 1,
             }
         ),
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -623,7 +663,7 @@ fn test_mul() {
             TestOut {
                 regs: vec![None, None, Some(0x4EDC2)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
@@ -636,13 +676,13 @@ fn test_mul() {
             TestOut {
                 regs: vec![Some(0), None, None],
                 cpsr: CPSR::Z,
-                cycles: None,
+                cycles: 1,
             }
         ),
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -659,13 +699,13 @@ fn test_mla() {
             TestOut {
                 regs: vec![None, None, Some(0x61107)],
                 cpsr: CPSR::C | CPSR::Z,
-                cycles: None,
+                cycles: 3,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -690,7 +730,7 @@ fn test_mrs() {
             TestOut {
                 regs: vec![Some(0x3000_0010)],
                 cpsr: CPSR::C | CPSR::V | CPSR::USR,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -703,13 +743,13 @@ fn test_mrs() {
             TestOut {
                 regs: vec![Some(0)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 0,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -726,7 +766,7 @@ fn test_msr() {
             TestOut {
                 regs: Vec::new(),
                 cpsr: CPSR::N | CPSR::V | CPSR::USR,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -739,7 +779,7 @@ fn test_msr() {
             TestOut {
                 regs: Vec::new(),
                 cpsr: CPSR::C | CPSR::V | CPSR::USR,
-                cycles: None,
+                cycles: 0,
             }
         ),
         (
@@ -752,13 +792,13 @@ fn test_msr() {
             TestOut {
                 regs: Vec::new(),
                 cpsr: CPSR::N | CPSR::Z | CPSR::C | CPSR::V | CPSR::USR,
-                cycles: None,
+                cycles: 0,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -768,72 +808,72 @@ fn test_ldr() {
         (
             // LDR R0, [R1]: Cond=AL, I=0, P=0, U=0, B=0, T=0, L=1, Rn=1, Rd=0, Imm=0
             TestIn {
-                regs: vec![0x12, 0x45],
+                regs: vec![0x14, 0x44],
                 cpsr: None,
                 instr: 0xE411_0000
             },
             TestOut {
-                regs: vec![Some(0x48_47_46_45), Some(0x45)],
+                regs: vec![Some(0x47_46_45_44), Some(0x44)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
             // LDR R0, [R1, #8]!: Cond=AL, I=0, P=1, U=1, B=0, W=1, L=1, Rn=1, Rd=0, Imm=8
             TestIn {
-                regs: vec![0x12, 0x45],
+                regs: vec![0x14, 0x44],
                 cpsr: None,
                 instr: 0xE5B1_0008
             },
             TestOut {
-                regs: vec![Some(0x50_4F_4E_4D), Some(0x4D)],
+                regs: vec![Some(0x4F_4E_4D_4C), Some(0x4C)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
-            // LDR R0, [R1] #-8: Cond=AL, I=0, P=0, U=0, B=0, T=0, L=1, Rn=0, Rd=1, Imm=8
+            // LDR R1, [R0] #-8: Cond=AL, I=0, P=0, U=0, B=0, T=0, L=1, Rn=0, Rd=1, Imm=8
             TestIn {
-                regs: vec![0x12, 0x45],
+                regs: vec![0x14, 0x44],
                 cpsr: None,
                 instr: 0xE410_1008
             },
             TestOut {
-                regs: vec![Some(0xA), Some(0x15_14_13_12)],
+                regs: vec![Some(0xC), Some(0x17_16_15_14)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
-            // LDR R0, [R1, {R2, LSL #1}]: Cond=AL, I=1, P=1, U=1, B=0, W=0, L=1, Rn=0, Rd=1, Is=1, Type=LSL, Rm=2
+            // LDR R1, [R0, {R2, LSL #1}]: Cond=AL, I=1, P=1, U=1, B=0, W=0, L=1, Rn=0, Rd=1, Is=1, Type=LSL, Rm=2
             TestIn {
-                regs: vec![0x12, 0x45, 0x10],
+                regs: vec![0x14, 0x44, 0x10],
                 cpsr: None,
                 instr: 0xE790_1082
             },
             TestOut {
-                regs: vec![Some(0x12), Some(0x35_34_33_32), Some(0x10)],
+                regs: vec![Some(0x14), Some(0x37_36_35_34), Some(0x10)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
-            // LDRB R0, [R1, {R2, LSR #1}]!: Cond=AL, I=1, P=1, U=1, B=1, W=1, L=1, Rn=0, Rd=1, Is=1, Type=LSR, Rm=2
+            // LDRB R1, [R0, {R2, LSR #1}]!: Cond=AL, I=1, P=1, U=1, B=1, W=1, L=1, Rn=0, Rd=1, Is=1, Type=LSR, Rm=2
             TestIn {
-                regs: vec![0x12, 0x45, 0x10],
+                regs: vec![0x12, 0x44, 0x10],
                 cpsr: None,
                 instr: 0xE7F0_10A2
             },
             TestOut {
                 regs: vec![Some(0x1A), Some(0x1A), Some(0x10)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -843,29 +883,29 @@ fn test_ldr() {
 fn test_ldrh() {
     let data = vec![
         (
-            // LDRH R0, [R1], #-8: Cond=AL, P=0, U=0, I=1, L=1, Rn=1, Rd=0, Imm=8
+            // LDRH R0, [R1], #-8: Cond=AL, P=0, U=0, I=1, L=1, Rn=1, Rd=0, Imm=0 + 8
             TestIn {
-                regs: vec![0x12, 0x45],
+                regs: vec![0x12, 0x44],
                 cpsr: None,
                 instr: 0xE05100B8
             },
             TestOut {
-                regs: vec![Some(0x46_45), Some(0x3D)],
+                regs: vec![Some(0x45_44), Some(0x3C)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
-            // LDRH R0, [R1, #33]!: Cond=AL, P=1, U=1, I=1, W=1, L=1, Rn=1, Rd=0, Imm=4
+            // LDRH R0, [R1, #36]!: Cond=AL, P=1, U=1, I=1, W=1, L=1, Rn=1, Rd=0, Imm=32 + 4
             TestIn {
                 regs: vec![0x33, 0x66],
                 cpsr: None,
-                instr: 0xE1F102B1
+                instr: 0xE1F102B4
             },
             TestOut {
-                regs: vec![Some(0x88_87), Some(0x87)],
+                regs: vec![Some(0x8B_8A), Some(0x8A)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         ),
         (
@@ -878,13 +918,13 @@ fn test_ldrh() {
             TestOut {
                 regs: vec![Some(0x10), Some(0x27_26), Some(0x16)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 2,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }
 
@@ -903,7 +943,7 @@ fn test_ldm() {
                     Some(0x3F_3E_3D_3C), Some(0x43_42_41_40), Some(0x47_46_45_44), Some(0x4B_4A_49_48), Some(0x4F_4E_4D_4C),
                     Some(0x4C), Some(0x26), Some(0x28), Some(0x2A), Some(0x2C)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 11,
             }
         ),
         (
@@ -918,22 +958,22 @@ fn test_ldm() {
                     Some(0x1A), Some(0x1C), Some(0x1E), Some(0x20), Some(0x22),
                     Some(0x24), Some(0x26), Some(0x28), Some(0x2A), Some(0x2C)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 5,
             }
         ),
         (
-            // LDMDB R5, {R2-R4}: Cond=AL, P=1, U=0, S=0, W=0, L=1, Rn=5, Rlist=0x001C
+            // LDMDB R6, {R2-R4}: Cond=AL, P=1, U=0, S=0, W=0, L=1, Rn=5, Rlist=0x001C
             TestIn {
                 regs: vec![0x10, 0x12, 0x14, 0x16, 0x18, 0x1A, 0x1C, 0x1E, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x2C],
                 cpsr: None,
-                instr: 0xE915001C
+                instr: 0xE916001C
             },
             TestOut {
-                regs: vec![Some(0x10), Some(0x12), Some(0x11_10_0F_0E), Some(0x15_14_13_12), Some(0x19_18_17_16),
+                regs: vec![Some(0x10), Some(0x12), Some(0x13_12_11_10), Some(0x17_16_15_14), Some(0x1B_1A_19_18),
                     Some(0x1A), Some(0x1C), Some(0x1E), Some(0x20), Some(0x22),
                     Some(0x24), Some(0x26), Some(0x28), Some(0x2A), Some(0x2C)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 4,
             }
         ),
         (
@@ -948,12 +988,12 @@ fn test_ldm() {
                     Some(0x1A), Some(0x1C), Some(0x1E), Some(0x20), Some(0x22),
                     Some(0x24), Some(0x26), Some(0x18), Some(0x2A), Some(0x2C)],
                 cpsr: CPSR::default(),
-                cycles: None,
+                cycles: 5,
             }
         )
     ];
 
-    for (in_data, out_data) in data.iter() {
-        in_data.run_test(out_data);
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
     }
 }

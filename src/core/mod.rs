@@ -68,8 +68,6 @@ pub trait ARMCore {
     fn return_from_exception(&mut self);
 
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
-
-    fn add_cycles(&mut self, cycles: usize);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

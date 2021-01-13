@@ -2,6 +2,7 @@
 
 use super::{
     constants::*,
+    utils::mul_cycles,
     *
 };
 use crate::common::*;
@@ -27,7 +28,11 @@ use crate::memory::Mem32;
 
 pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Decode and execute the instruction.
-    fn execute_instruction(&mut self, i: u32) {
+    /// 
+    /// Returns the number of cycles needed to execute it.
+    /// This includes any internal (I) cycles and non-seq loads and stores (N).
+    /// It does _not_ include the initial fetch cycles (S) or any pipeline flush stall cycles.
+    fn execute_instruction(&mut self, i: u32) -> usize {
         const COPROC: u32 = 0b11 << 26;
         const BRANCH: u32 = 0b10 << 26;
         const TRANSFER: u32 = 0b01 << 26;
@@ -40,6 +45,8 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
                 ALU         => self.decode_alu(i),
                 _ => unreachable!(),
             }
+        } else {
+            0
         }
     }
 
@@ -89,20 +96,21 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// Decode a coprocessor or SWI instruction.
     /// i has the value cccc11...
-    fn decode_coproc(&mut self, i: u32) {
+    fn decode_coproc(&mut self, i: u32) -> usize {
         if test_bit(i, 25) {
             if test_bit(i, 24) {
                 self.swi();
+                0
             } else {
-                self.decode_coproc_op(i);
+                self.decode_coproc_op(i)
             }
         } else {
-            self.decode_coproc_transfer(i);
+            self.decode_coproc_transfer(i)
         }
     }
 
     /// Decode a coprocessor register transfer or data op.
-    fn decode_coproc_op(&mut self, i: u32) {
+    fn decode_coproc_op(&mut self, i: u32) -> usize {
         let reg_n = ((i >> 16) & 0xF) as usize;
         let reg_d = ((i >> 12) & 0xF) as usize;
         let coproc = ((i >> 8) & 0xF) as usize;
@@ -111,18 +119,18 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         if test_bit(i, 4) {
             let op = (i >> 21) & 0x7;
             if test_bit(i, 20) {
-                self.mrc(coproc, reg_n, reg_d, reg_m, op, info);
+                self.mrc(coproc, reg_n, reg_d, reg_m, op, info)
             } else {
-                self.mcr(coproc, reg_n, reg_d, reg_m, op, info);
+                self.mcr(coproc, reg_n, reg_d, reg_m, op, info)
             }
         } else {
             let op = (i >> 20) & 0xF;
-            self.cdp(op, reg_n, reg_d, info, reg_m, coproc);
+            self.cdp(op, reg_n, reg_d, info, reg_m, coproc)
         }
     }
 
     /// Decode a coprocessor data transfer with memory.
-    fn decode_coproc_transfer(&mut self, i: u32) {
+    fn decode_coproc_transfer(&mut self, i: u32) -> usize {
         let base_reg = ((i >> 16) & 0xF) as usize;
         let data_reg = ((i >> 12) & 0xF) as usize;
         let coproc = ((i >> 8) & 0xF) as usize;
@@ -145,35 +153,41 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             base_addr   // Post
         };
 
-        if test_bit(i, 20) {
-            self.ldc(test_bit(i, 22), transfer_addr, coproc, data_reg);
+        let cycles = if test_bit(i, 20) {
+            self.ldc(test_bit(i, 22), transfer_addr, coproc, data_reg)
         } else {
-            self.stc(test_bit(i, 22), transfer_addr, coproc, data_reg);
-        }
+            self.stc(test_bit(i, 22), transfer_addr, coproc, data_reg)
+        };
 
         if !pre_index || test_bit(i, 21) {
             // Write offset address back into base register.
             self.write_reg(base_reg, offset_addr);
         }
+
+        cycles
     }
 
     /// Decode a branch or block transfer instruction.
     /// i has the value cccc10...
-    fn decode_branch(&mut self, i: u32) {
+    fn decode_branch(&mut self, i: u32) -> usize {
         if test_bit(i, 25) {
             if test_bit(i, 24) {
                 self.b(i);
             } else {
                 self.bl(i);
             }
+            // Branches themselves take 0 additional cycles.
+            // The pipeline however is flushed which will lead to extra cycles.
+            // Therefore it will take a few additional steps to start executing again.
+            0
         } else {
-            self.transfer_multiple(i);
+            self.transfer_multiple(i)
         }
     }
 
     /// Decode a single transfer instruction (load or store).
     /// i has the value cccc01...
-    fn decode_transfer(&mut self, i: u32) {
+    fn decode_transfer(&mut self, i: u32) -> usize {
         let base_reg = ((i >> 16) & 0xF) as usize;
         let data_reg = ((i >> 12) & 0xF) as usize;
         let offset = self.offset(i);
@@ -195,33 +209,35 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             base_addr   // Post
         };
 
-        if test_bit(i, 20) {
-            self.ldr(test_bit(i, 22), transfer_addr, data_reg);
+        let cycles = if test_bit(i, 20) {
+            self.ldr(test_bit(i, 22), transfer_addr, data_reg)
         } else {
-            self.str(test_bit(i, 22), transfer_addr, data_reg);
-        }
+            self.str(test_bit(i, 22), transfer_addr, data_reg)
+        };
 
         if !pre_index || test_bit(i, 21) {
             // Write offset address back into base register.
             self.write_reg(base_reg, offset_addr);
         }
+
+        cycles
     }
 
     /// Decode an ALU instruction.
     /// i has the value cccc00...
-    fn decode_alu(&mut self, i: u32) {
+    fn decode_alu(&mut self, i: u32) -> usize {
         // If bit 25 is 0, then bits 7 and 4 can determine if it's an extension instruction.
         if !test_bit(i, 25) && test_bit(i, 7) && test_bit(i, 4) {   // TODO: optimise this check
-            self.decode_other(i);
+            self.decode_other(i)
         } else {
-            self.decode_data_proc(i);
+            self.decode_data_proc(i)
         }
     }
 
     /// Decode extended transfers, SWP and multiplication.
     /// All of these instructions have bit25 = 0 and bits7 and 4 = 1.
     /// The exact instruction depends on the value of bits 6 and 5.
-    fn decode_other(&mut self, i: u32) {
+    fn decode_other(&mut self, i: u32) -> usize {
         const HALFWORD: u32 = 0b01 << 5;
         const OTHER: u32 = 0b00 << 5;
         match i & bits(5, 6) {
@@ -237,7 +253,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a multiply instruction.
-    fn decode_multiply(&mut self, i: u32) {
+    fn decode_multiply(&mut self, i: u32) -> usize {
         let set_flags = test_bit(i, 20);
         let rd = ((i >> 16) & 0xF) as usize;
         let rn = ((i >> 12) & 0xF) as usize;
@@ -255,7 +271,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a data processing instruction.
-    fn decode_data_proc(&mut self, i: u32) {
+    fn decode_data_proc(&mut self, i: u32) -> usize {
         let set_flags = test_bit(i, 20);
         let rn = ((i >> 16) & 0xF) as usize;
         let rd = ((i >> 12) & 0xF) as usize;
@@ -279,48 +295,56 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             0x8 => if compare() {
                 self.tst(self.read_reg(rn), op2, shift_carry)                     // TST
             } else {
-                self.decode_ext_mode(i, rn, rd, false, false)
+                return self.decode_ext_mode(i, rn, rd, false, false);
             },
             0x9 => if compare() {
                 self.teq(self.read_reg(rn), op2, shift_carry)                     // TEQ
             } else {
-                self.decode_ext_mode(i, rn, rd, true, false)
+                return self.decode_ext_mode(i, rn, rd, true, false);
             },
             0xA => if compare() {
                 self.cmp(self.read_reg(rn), op2)                                  // CMP
             } else {
-                self.decode_ext_mode(i, rn, rd, false, true)
+                return self.decode_ext_mode(i, rn, rd, false, true);
             },
             0xB => if compare() {
                 self.cmn(self.read_reg(rn), op2)                                  // CMN
             } else {
-                self.decode_ext_mode(i, rn, rd, true, true)
+                return self.decode_ext_mode(i, rn, rd, true, true);
             },
             0xD => self.mov(set_flags, rd, op2, shift_carry),                     // MOV
             0xF => self.mov(set_flags, rd, !op2, shift_carry),                    // MVN
-            _ => self.undefined(),
+            _ => return self.undefined(),
+        }
+
+        // TODO: optimise this check
+        if !test_bit(i, 25) && test_bit(i, 4) {
+            1   // Register shift takes an extra internal cycle
+        } else {
+            0
         }
     }
 
     /// Decodes extension mode instructions.
     /// This includes MRS, MSR and BX
     /// This has multiple entry points so some data has already been decoded.
-    fn decode_ext_mode(&mut self, i: u32, rn: usize, rd: usize, msr: bool, spsr: bool) {
+    fn decode_ext_mode(&mut self, i: u32, rn: usize, rd: usize, msr: bool, spsr: bool) -> usize {
         if msr && (rd == 0xF) {
             if !test_bit(i, 25) {
                 match i & 0xFF0 {
                     0xF10 if rn == 0xF => self.bx(i),
                     0x000 => self.msr(spsr, i),
-                    _ => self.undefined(),
+                    _ => {self.undefined();},
                 }
             } else {
-                self.msr(spsr, i);
+                self.msr(spsr, i)
             }
         } else if !msr && (rn == 0xF) && (i & 0xFFF) == 0 {
             self.mrs(spsr, rd);
         } else {
             self.undefined();
         }
+        0
     }
 
     /// Calculate the second operand of an arithmetic / logic instruction.
@@ -421,7 +445,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// Decode a load or store halfword instruction.
-    fn decode_transfer_halfword(&mut self, i: u32) {
+    fn decode_transfer_halfword(&mut self, i: u32) -> usize {
         let base_reg = ((i >> 16) & 0xF) as usize;
         let data_reg = ((i >> 12) & 0xF) as usize;
         let offset = self.halfword_offset(i);
@@ -443,16 +467,18 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             base_addr   // Post
         };
 
-        if test_bit(i, 20) {
-            self.ldrh(transfer_addr, data_reg);
+        let cycles = if test_bit(i, 20) {
+            self.ldrh(transfer_addr, data_reg)
         } else {
-            self.strh(transfer_addr, data_reg);
-        }
+            self.strh(transfer_addr, data_reg)
+        };
 
         if !pre_index || test_bit(i, 21) {
             // Write offset address back into base register.
             self.write_reg(base_reg, offset_addr);
         }
+
+        cycles
     }
 
     /// Calculate the offset of a halfword load/store instruction.
@@ -468,11 +494,11 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// Decode a transfer multiple instruction.
     /// Writes registers low-high into low-high addresses.
-    fn transfer_multiple(&mut self, i: u32) {
+    fn transfer_multiple(&mut self, i: u32) -> usize {
         let base_reg = ((i >> 16) & 0xF) as usize;
         if base_reg == PC_REG {
-            self.trigger_exception(Exception::UndefinedInstruction);
-            return;
+            self.undefined();
+            return 0;
         }
         let base_addr = self.read_reg(base_reg);
 
@@ -491,21 +517,25 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         // Add before load/store.
         let pre_index = test_bit(i, 24) == increment;
 
-        if test_bit(i, 20) {
-            self.ldm(transfer_addr, data_regs, pre_index);
+        let cycles = if test_bit(i, 20) {
+            self.ldm(transfer_addr, data_regs, pre_index)
         } else {
-            self.stm(transfer_addr, data_regs, pre_index);
-        }
+            self.stm(transfer_addr, data_regs, pre_index)
+        };
 
         if test_bit(i, 21) {
             // Write offset address back into base register.
             self.write_reg(base_reg, writeback_addr);
         }
+
+        cycles
     }
 
     /// Called when an undefined instruction is encountered.
-    fn undefined(&mut self) {
+    /// Returns the amount of additional cycles taken.
+    fn undefined(&mut self) -> usize {
         self.trigger_exception(Exception::UndefinedInstruction);
+        0
     }
 
     // Logic
@@ -664,7 +694,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// MUL
     /// Multiply
-    fn mul(&mut self, s: bool, rd: usize, rs: usize, rm: usize) {
+    fn mul(&mut self, s: bool, rd: usize, rs: usize, rm: usize) -> usize {
         let op1 = self.read_reg(rm);
         let op2 = self.read_reg(rs);
         let result = op1.wrapping_mul(op2);
@@ -676,11 +706,12 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
+        mul_cycles(op2)
     }
 
     /// MLA
     /// Multiply and accumulate
-    fn mla(&mut self, s: bool, rd: usize, rn: usize, rs: usize, rm: usize) {
+    fn mla(&mut self, s: bool, rd: usize, rn: usize, rs: usize, rm: usize) -> usize {
         let op1 = self.read_reg(rm);
         let op2 = self.read_reg(rs);
         let mul_result = op1.wrapping_mul(op2);
@@ -693,14 +724,16 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
+        mul_cycles(op2) + 1
     }
 
     /// UMULL
     /// Unsigned long multiply
-    fn umull(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+    fn umull(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) -> usize {
         let op1 = self.read_reg(rm) as u64;
-        let op2 = self.read_reg(rn) as u64;
-        let result = op1.wrapping_mul(op2);
+        let op2 = self.read_reg(rn);
+        let op2_64 = op2 as u64;
+        let result = op1.wrapping_mul(op2_64);
         self.write_reg(rd_lo, lo_64(result));
         self.write_reg(rd_hi, hi_64(result));
         if s {
@@ -710,14 +743,16 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
+        mul_cycles(op2) + 1
     }
 
     /// UMLAL
     /// Unsigned long multiply and accumulate
-    fn umlal(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+    fn umlal(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) -> usize {
         let op1 = self.read_reg(rm) as u64;
-        let op2 = self.read_reg(rn) as u64;
-        let mul_result = op1.wrapping_mul(op2);
+        let op2 = self.read_reg(rn);
+        let op2_64 = op2 as u64;
+        let mul_result = op1.wrapping_mul(op2_64);
         let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
         let result = mul_result.wrapping_add(acc_op);
         self.write_reg(rd_lo, lo_64(result));
@@ -729,14 +764,16 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
+        mul_cycles(op2) + 2
     }
 
     /// SMULL
     /// Signed long multiply
-    fn smull(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+    fn smull(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) -> usize {
         let op1 = (self.read_reg(rm) as i32) as i64;
-        let op2 = (self.read_reg(rn) as i32) as i64;
-        let result = op1.wrapping_mul(op2) as u64;
+        let op2 = self.read_reg(rn);
+        let op2_64 = (op2 as i32) as i64;
+        let result = op1.wrapping_mul(op2_64) as u64;
         self.write_reg(rd_lo, lo_64(result));
         self.write_reg(rd_hi, hi_64(result));
         if s {
@@ -746,14 +783,16 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
+        mul_cycles(op2) + 1
     }
 
     /// SMLAL
     /// Signed long multiply and accumulate
-    fn smlal(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) {
+    fn smlal(&mut self, s: bool, rd_lo: usize, rd_hi: usize, rn: usize, rm: usize) -> usize {
         let op1 = (self.read_reg(rm) as i32) as i64;
-        let op2 = (self.read_reg(rn) as i32) as i64;
-        let mul_result = op1.wrapping_mul(op2) as u64;
+        let op2 = self.read_reg(rn);
+        let op2_64 = (op2 as i32) as i64;
+        let mul_result = op1.wrapping_mul(op2_64) as u64;
         let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
         let result = mul_result.wrapping_add(acc_op);
         self.write_reg(rd_lo, lo_64(result));
@@ -765,6 +804,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
         }
+        mul_cycles(op2) + 2
     }
 
     // Branch
@@ -799,6 +839,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     }
 
     /// BX
+    /// Branch and exchange - switch to Thumb ISA
     fn bx(&mut self, i: u32) {
         let reg = self.read_reg((i & 0xF) as usize);
         let mut cpsr = self.read_cpsr();
@@ -849,89 +890,100 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// SWP
     /// Single data swap
-    fn swp(&mut self, i: u32) {
+    fn swp(&mut self, i: u32) -> usize {
         let rn = ((i >> 16) & 0xF) as usize;
         let rd = ((i >> 12) & 0xF) as usize;
         let rm = (i & 0xF) as usize;
 
         let addr = self.read_reg(rn);
         if test_bit(i, 22) {
-            let data = self.load_byte(addr) as u32;
-            self.write_reg(rd, data);
-            self.store_byte(addr, self.read_reg(rm) as u8);
+            let (data, load_cycles) = self.load_byte(addr);
+            self.write_reg(rd, data as u32);
+            let store_cycles = self.store_byte(addr, self.read_reg(rm) as u8);
+            load_cycles + store_cycles + 1
         } else {
-            let data = self.load_word(addr);
+            let (data, load_cycles) = self.load_word(addr);
             self.write_reg(rd, data);
-            self.store_word(addr, self.read_reg(rm));
+            let store_cycles = self.store_word(addr, self.read_reg(rm));
+            load_cycles + store_cycles + 1
         }
     }
 
     /// LDR
     /// Load a single word or byte from memory and store it in a register.
-    fn ldr(&mut self, byte: bool, addr: u32, dest_reg: usize) {
-        let data = if byte {
-            let data_byte = self.load_byte(addr);
-            data_byte as u32
+    fn ldr(&mut self, byte: bool, addr: u32, dest_reg: usize) -> usize {
+        let (data, cycles) = if byte {
+            let (data_byte, cycles) = self.load_byte(addr);
+            (data_byte as u32, cycles)
         } else {
             self.load_word(addr)
         };
         self.write_reg(dest_reg, data);
+        // Loads take one extra internal cycle.
+        cycles + 1
     }
 
     /// STR
     /// Store a single word or byte into memory.
-    fn str(&mut self, byte: bool, addr: u32, src_reg: usize) {
+    fn str(&mut self, byte: bool, addr: u32, src_reg: usize) -> usize {
         let data = if src_reg == PC_REG {
             self.read_reg(src_reg).wrapping_add(12)
         } else {
             self.read_reg(src_reg)
         };
         if byte {
-            self.store_byte(addr, data as u8);
+            self.store_byte(addr, data as u8)
         } else {
-            self.store_word(addr, data);
+            self.store_word(addr, data)
         }
     }
 
     /// LDRH
     /// Load 2 bytes from memory.
-    fn ldrh(&mut self, addr: u32, dest_reg: usize) {
-        let data = self.load_halfword(addr) as u32;
-        self.write_reg(dest_reg, data);
+    fn ldrh(&mut self, addr: u32, dest_reg: usize) -> usize {
+        let (data, cycles) = self.load_halfword(addr);
+        self.write_reg(dest_reg, data as u32);
+        cycles + 1
     }
 
     /// STRH
     /// Store 2 bytes into memory.
-    fn strh(&mut self, addr: u32, src_reg: usize) {
+    fn strh(&mut self, addr: u32, src_reg: usize) -> usize {
         let data = if src_reg == PC_REG {
             self.read_reg(src_reg).wrapping_add(12)
         } else {
             self.read_reg(src_reg)
         };
-        self.store_halfword(addr, data as u16);
+        self.store_halfword(addr, data as u16)
     }
 
     /// LDM
     /// Block load from memory into registers.
     /// Start from the base address (addr). Load each register in low-high.
     /// Add 4 to the address before loading if pre == true.
-    fn ldm(&mut self, mut addr: u32, regs: u32, pre: bool) {
+    fn ldm(&mut self, mut addr: u32, regs: u32, pre: bool) -> usize {
         if pre {
-            for reg in 0..16 {
+            (0..16).fold(0, |acc, reg| {
                 if test_bit(regs, reg) {
                     addr += 4;
-                    let data = self.load_word(addr);
+                    let (data, cycles) = self.load_word(addr);
                     self.write_reg(reg, data);
+                    acc + cycles
+                } else {
+                    acc
                 }
-            }
+            }) + 1
         } else {
-            for reg in 0..16 {
+            (0..16).fold(0, |acc, reg| {
                 if test_bit(regs, reg) {
-                    let data = self.load_word(addr);
+                    let (data, cycles) = self.load_word(addr);
                     self.write_reg(reg, data);
                     addr += 4;
+                    acc + cycles
+                } else {
+                    acc
                 }
-            }
+            }) + 1
         }
     }
 
@@ -939,23 +991,29 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Block store from registers into memory.
     /// Start from the base address (addr). Store each register in low-high.
     /// Add 4 to the address before storing if pre == true.
-    fn stm(&mut self, mut addr: u32, regs: u32, pre: bool) {
+    fn stm(&mut self, mut addr: u32, regs: u32, pre: bool) -> usize {
         if pre {
-            for reg in 0..16 {
+            (0..16).fold(0, |acc, reg| {
                 if test_bit(regs, reg) {
                     addr += 4;
                     let data = self.read_reg(reg);
-                    self.store_word(addr, data);
+                    let cycles = self.store_word(addr, data);
+                    acc + cycles
+                } else {
+                    acc
                 }
-            }
+            }) + 1
         } else {
-            for reg in 0..16 {
+            (0..16).fold(0, |acc, reg| {
                 if test_bit(regs, reg) {
                     let data = self.read_reg(reg);
-                    self.store_word(addr, data);
+                    let cycles = self.store_word(addr, data);
                     addr += 4;
+                    acc + cycles
+                } else {
+                    acc
                 }
-            }
+            }) + 1
         }
     }
 
@@ -963,49 +1021,59 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// MRC
     /// Move from coprocessor to ARM
-    fn mrc(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) {
-        let data = if let Some(c) = self.ref_coproc(coproc) {
-            c.mrc(coproc_reg, op_reg, op, info)
+    fn mrc(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
+        if let Some(c) = self.ref_coproc(coproc) {
+            let (data, cycles) = c.mrc(coproc_reg, op_reg, op, info);
+            self.write_reg(arm_reg, data);
+            cycles
         } else {
-            0
-        };
-        self.write_reg(arm_reg, data);
+            self.undefined()
+        }
     }
 
     /// MCR
     /// Move from ARM to coprocessor
-    fn mcr(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) {
+    fn mcr(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
         let data = self.read_reg(arm_reg);
         if let Some(c) = self.ref_coproc(coproc) {
-            c.mcr(coproc_reg, op_reg, data, op, info);
+            c.mcr(coproc_reg, op_reg, data, op, info)
+        } else {
+            self.undefined()
         }
     }
 
     /// STC
     /// Store into memory from coprocessor
-    fn stc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) {
-        let data = if let Some(c) = self.ref_coproc(coproc) {
-            c.stc(transfer_len, coproc_reg)
+    /// TODO: transfer len of more than 1?
+    fn stc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) -> usize {
+        if let Some(c) = self.ref_coproc(coproc) {
+            let (data, cop_cycles) = c.stc(transfer_len, coproc_reg);
+            let mem_cycles = self.store_word(addr, data);
+            cop_cycles + mem_cycles
         } else {
-            0
-        };
-        self.store_word(addr, data);
+            self.undefined()
+        }
     }
 
     /// LDC
     /// Load from memory to coprocessor
-    fn ldc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) {
-        let data = self.load_word(addr);
+    /// TODO: transfer len of more than 1?
+    fn ldc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) -> usize {
+        let (data, mem_cycles) = self.load_word(addr);
         if let Some(c) = self.ref_coproc(coproc) {
-            c.ldc(transfer_len, coproc_reg, data);
+            c.ldc(transfer_len, coproc_reg, data) + mem_cycles
+        } else {
+            self.undefined()
         }
     }
 
     /// CDP
     /// Coprocessor data operation
-    fn cdp(&mut self, op: u32, reg_n: usize, reg_d: usize, info: u32, reg_m: usize, coproc: usize) {
+    fn cdp(&mut self, op: u32, reg_n: usize, reg_d: usize, info: u32, reg_m: usize, coproc: usize) -> usize {
         if let Some(c) = self.ref_coproc(coproc) {
-            c.cdp(op, reg_n, reg_d, info, reg_m);
+            c.cdp(op, reg_n, reg_d, info, reg_m)
+        } else {
+            self.undefined()
         }
     }
 

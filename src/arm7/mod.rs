@@ -9,7 +9,7 @@ use crate::core::{
     ARMCore,
     ARMv4
 };
-use crate::memory::{Mem, Mem32};
+use crate::memory::Mem32;
 use crate::coproc::Coprocessor;
 
 pub struct ARM7TDMI<M: Mem32> {
@@ -32,9 +32,8 @@ pub struct ARM7TDMI<M: Mem32> {
     mem:    M,
     coproc: [Option<Box<dyn Coprocessor>>; 16],
     
-    current_i: Option<u32>,
-    next_i: Option<u32>,
-    cycles: usize,
+    fetched_instr: Option<u32>,
+    decoded_instr: Option<u32>,
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
@@ -58,56 +57,53 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             mem:    mem,
             coproc: coproc,
 
-            current_i: None,
-            next_i: None,
-            cycles: 0,
+            fetched_instr: None,
+            decoded_instr: None,
         }
     }
 
     /// Step a single instruction.
     /// Returns how many cycles passed.
     pub fn step(&mut self) -> usize {
-        // Fetch
-        let i = self.load_word(self.regs[PC_REG]);
+        // Execute the decoded instr.
+        let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
+            self.execute_instruction(executing_instr)
+        } else {
+            0
+        };
+        // Fetch the next instr.
+        let (new_fetched_instr, fetch_cycles) = self.load_word(self.regs[PC_REG]);
         self.regs[PC_REG] += 4;
-        // Decode + execute
-        if let Some(i) = self.next_i {
-            self.execute_instruction(i);
-        }
         // Shift the pipeline
-        self.next_i = self.current_i;
-        self.current_i = Some(i);
-
-        let cycles_passed = self.cycles + 1;
-        self.cycles = 0;
-        cycles_passed
-    }
-}
-
-impl<M: Mem32<Addr = u32>> Mem for ARM7TDMI<M> {
-    type Addr = u32;
-
-    fn load_byte(&mut self, addr: Self::Addr) -> u8 {
-        self.mem.load_byte(addr)
-    }
-    fn store_byte(&mut self, addr: Self::Addr, data: u8) {
-        self.mem.store_byte(addr, data);
+        self.decoded_instr = self.fetched_instr;
+        self.fetched_instr = Some(new_fetched_instr);
+        // Calc cycles
+        fetch_cycles + execute_cycles
     }
 }
 
 impl<M: Mem32<Addr = u32>> Mem32 for ARM7TDMI<M> {
-    fn load_halfword(&mut self, addr: Self::Addr) -> u16 {
-        self.mem.load_halfword(addr)
+    type Addr = u32;
+
+    fn load_byte(&mut self, addr: Self::Addr) -> (u8, usize) {
+        self.mem.load_byte(addr)
     }
-    fn store_halfword(&mut self, addr: Self::Addr, data: u16) {
-        self.mem.store_halfword(addr, data);
+    fn store_byte(&mut self, addr: Self::Addr, data: u8) -> usize {
+        self.mem.store_byte(addr, data)
     }
 
-    fn load_word(&mut self, addr: Self::Addr) -> u32 {
+    fn load_halfword(&mut self, addr: Self::Addr) -> (u16, usize) {
+        self.mem.load_halfword(addr)
+    }
+    fn store_halfword(&mut self, addr: Self::Addr, data: u16) -> usize {
+        self.mem.store_halfword(addr, data)
+    }
+
+    fn load_word(&mut self, addr: Self::Addr) -> (u32, usize) {
         self.mem.load_word(addr)
     }
-    fn store_word(&mut self, addr: Self::Addr, data: u32) {
-        self.mem.store_word(addr, data);
+    fn store_word(&mut self, addr: Self::Addr, data: u32) -> usize {
+        self.mem.store_word(addr, data)
     }
 }
 
@@ -282,10 +278,6 @@ impl<M: Mem32> ARMCore for ARM7TDMI<M> {
 
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
         self.coproc[coproc].as_mut()
-    }
-
-    fn add_cycles(&mut self, cycles: usize) {
-        self.cycles += cycles;
     }
 }
 

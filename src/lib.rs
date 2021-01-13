@@ -9,7 +9,7 @@ pub use crate::core::{
 };
 
 pub use crate::memory::{
-    Mem, Mem32
+    Mem32
 };
 
 pub use crate::arm7::{
