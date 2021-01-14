@@ -269,51 +269,90 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         let set_flags = test_bit(i, 20);
         let rn = ((i >> 16) & 0xF) as usize;
         let rd = ((i >> 12) & 0xF) as usize;
-        let (op2, shift_carry) = self.op2(i);
 
         let compare = || {
             set_flags && (rd == 0)
         };
 
         match (i >> 21) & 0xF {
-            0x0 => self.and(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // AND
-            0x1 => self.eor(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // EOR
-            0x2 => self.sub(set_flags, rd, self.read_reg(rn), op2),               // SUB
-            0x3 => self.sub(set_flags, rd, op2, self.read_reg(rn)),               // RSB
-            0x4 => self.add(set_flags, rd, self.read_reg(rn), op2),               // ADD
-            0x5 => self.adc(set_flags, rd, self.read_reg(rn), op2),               // ADC
-            0x6 => self.adc(set_flags, rd, self.read_reg(rn), !op2),              // SBC
-            0x7 => self.adc(set_flags, rd, op2, !self.read_reg(rn)),              // RSC
-            0xC => self.orr(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // ORR
-            0xE => self.bic(set_flags, rd, self.read_reg(rn), op2, shift_carry),  // BIC
+            0x0 => {
+                let op2 = self.op2(i, true);
+                self.and(set_flags, rd, self.read_reg(rn), op2);    // AND
+            },
+            0x1 => {
+                let op2 = self.op2(i, true);
+                self.eor(set_flags, rd, self.read_reg(rn), op2);    // EOR
+            },
+            0x2 => {
+                let op2 = self.op2(i, false);
+                self.sub(set_flags, rd, self.read_reg(rn), op2);    // SUB
+            },
+            0x3 => {
+                let op2 = self.op2(i, false);
+                self.sub(set_flags, rd, op2, self.read_reg(rn));    // RSB
+            },
+            0x4 => {
+                let op2 = self.op2(i, false);
+                self.add(set_flags, rd, self.read_reg(rn), op2);    // ADD
+            },
+            0x5 => {
+                let op2 = self.op2(i, false);
+                self.adc(set_flags, rd, self.read_reg(rn), op2);    // ADC
+            },
+            0x6 => {
+                let op2 = self.op2(i, false);
+                self.adc(set_flags, rd, self.read_reg(rn), !op2);   // SBC
+            },
+            0x7 => {
+                let op2 = self.op2(i, false);
+                self.adc(set_flags, rd, op2, !self.read_reg(rn));   // RSC
+            },
+            0xC => {
+                let op2 = self.op2(i, true);
+                self.orr(set_flags, rd, self.read_reg(rn), op2);    // ORR
+            },
+            0xE => {
+                let op2 = self.op2(i, true);
+                self.bic(set_flags, rd, self.read_reg(rn), op2);    // BIC
+            },
             0x8 => if compare() {
-                self.tst(self.read_reg(rn), op2, shift_carry)                     // TST
+                let op2 = self.op2(i, true);
+                self.tst(self.read_reg(rn), op2)                    // TST
             } else {
                 return self.decode_ext_mode(i, rn, rd, false, false);
             },
             0x9 => if compare() {
-                self.teq(self.read_reg(rn), op2, shift_carry)                     // TEQ
+                let op2 = self.op2(i, true);
+                self.teq(self.read_reg(rn), op2)                    // TEQ
             } else {
                 return self.decode_ext_mode(i, rn, rd, true, false);
             },
             0xA => if compare() {
-                self.cmp(self.read_reg(rn), op2)                                  // CMP
+                let op2 = self.op2(i, false);
+                self.cmp(self.read_reg(rn), op2)                    // CMP
             } else {
                 return self.decode_ext_mode(i, rn, rd, false, true);
             },
             0xB => if compare() {
-                self.cmn(self.read_reg(rn), op2)                                  // CMN
+                let op2 = self.op2(i, false);
+                self.cmn(self.read_reg(rn), op2)                    // CMN
             } else {
                 return self.decode_ext_mode(i, rn, rd, true, true);
             },
-            0xD => self.mov(set_flags, rd, op2, shift_carry),                     // MOV
-            0xF => self.mov(set_flags, rd, !op2, shift_carry),                    // MVN
+            0xD => {
+                let op2 = self.op2(i, true);
+                self.mov(set_flags, rd, op2);                       // MOV
+            },
+            0xF => {
+                let op2 = self.op2(i, true);
+                self.mov(set_flags, rd, !op2);                      // MVN
+            },
             _ => return self.undefined(),
         }
 
         // TODO: optimise this check
         if !test_bit(i, 25) && test_bit(i, 4) {
-            // TODO: re-dec PC
+            self.write_reg(PC_REG, self.read_reg(PC_REG).wrapping_sub(4));
             1   // Register shift takes an extra internal cycle
         } else {
             0
@@ -344,55 +383,69 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// Calculate the second operand of an arithmetic / logic instruction.
     /// Can involve a shift.
-    /// If the carry flag should be modified for logic ops, it is returned via the second return value.
+    /// This instruction _may_ set the carry flag for certain instructions.
+    /// It _will_ increment the program counter if a shift-by-register is involved.
+    /// 
     /// Extracts a value from the lower 12 bits based on the 25th bit.
-    fn op2(&self, i: u32) -> (u32, Option<bool>) {
+    fn op2(&mut self, i: u32, set_carry: bool) -> u32 {
         // Immediate value with rotate:
         if test_bit(i, 25) {
             let shift = (i >> 7) & 0x1E;
             let n = i & 0xFF;
-            return (n.rotate_right(shift), None);
+            return n.rotate_right(shift);
         }
         // Register value with optional shift:
         let r_val = self.read_reg((i & 0xF) as usize);
         let shift_type = (i >> 5) & 3;
             // Shift by register:
         let shift = if test_bit(i, 4) {
-            // TODO: inc PC
+            self.write_reg(PC_REG, self.read_reg(PC_REG).wrapping_add(4));
             let shift_reg = (i >> 8) & 0xF;
-            self.read_reg(shift_reg as usize) & 0xFF
+            self.read_reg(shift_reg as usize) & 0x1F
 
             // Shift by immediate:
         } else {
             let shift_amount = (i >> 7) & 0x1F;
             // Special shift cases when the immediate is 0:
             if shift_amount == 0 {
-                return match shift_type {
-                    0 => (r_val, None),
-                    1 => (0, Some(test_bit(r_val, 31))),
-                    2 => ((r_val as i32).wrapping_shr(31) as u32, Some(test_bit(r_val, 31))),
+                let mut cpsr = self.read_cpsr();
+                let ret = match shift_type {
+                    0 => r_val,
+                    1 => {
+                        cpsr.set(CPSR::C, test_bit(r_val, 31));
+                        0
+                    },
+                    2 => {
+                        cpsr.set(CPSR::C, test_bit(r_val, 31));
+                        (r_val as i32).wrapping_shr(31) as u32
+                    },
                     3 => {  // RRX #1
-                        let carry = if self.read_cpsr().contains(CPSR::C) {bit(31)} else {0};
-                        ((r_val >> 1) | carry, Some(test_bit(r_val, 0)))
+                        let carry = if cpsr.contains(CPSR::C) {bit(31)} else {0};
+                        cpsr.set(CPSR::C, test_bit(r_val, 0));
+                        (r_val >> 1) | carry
                     },
                     _ => unreachable!()
                 };
+                if set_carry {
+                    self.write_cpsr(cpsr);
+                }
+                return ret;
             }
             shift_amount
         };
-        // TODO: the following need to be accurate when reg shift > 31
+
         match shift_type {
-            0 => (r_val.wrapping_shl(shift), Some(test_bit(r_val, (32 - shift) as usize))),
-            1 => (r_val.wrapping_shr(shift), Some(test_bit(r_val, (shift - 1) as usize))),
-            2 => ((r_val as i32).wrapping_shr(shift) as u32, Some(test_bit(r_val, (shift - 1) as usize))),
-            3 => (r_val.rotate_right(shift), None),
+            0 => self.lsl(set_carry, r_val, shift),
+            1 => self.lsr(set_carry, r_val, shift),
+            2 => self.asr(set_carry, r_val, shift),
+            3 => self.ror(r_val, shift),
             _ => unreachable!()
         }
     }
 
     /// Writeback a data processing instruction.
     /// Also sets the n and z flags optionally.
-    fn writeback(&mut self, s: bool, rd: usize, result: u32, set_c: Option<bool>) {
+    fn writeback(&mut self, s: bool, rd: usize, result: u32) {
         self.write_reg(rd, result);
         if s {
             if rd == PC_REG {
@@ -401,9 +454,6 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
                 let mut cpsr = self.read_cpsr();
                 cpsr.set(CPSR::N, test_bit(result, 31));
                 cpsr.set(CPSR::Z, result == 0);
-                if let Some(c) = set_c {
-                    cpsr.set(CPSR::C, c);
-                }
                 self.write_cpsr(cpsr);
             }
         }
@@ -532,67 +582,102 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         0
     }
 
+    // Shifts
+
+    /// LSL
+    /// Logical shift left (fill with zeroes)
+    fn lsl(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
+        if set_carry {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::C, test_bit(val, (32 - shift_amount) as usize));
+            self.write_cpsr(cpsr);
+        }
+        val.wrapping_shl(shift_amount)
+    }
+
+    /// LSR
+    /// Logical shift right (fill with zeroes)
+    fn lsr(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
+        if set_carry {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::C, test_bit(val, (shift_amount - 1) as usize));
+            self.write_cpsr(cpsr);
+        }
+        val.wrapping_shr(shift_amount)
+    }
+
+    /// ASR
+    /// Arithmetic shift right (sign-extend)
+    fn asr(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
+        if set_carry {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::C, test_bit(val, (shift_amount - 1) as usize));
+            self.write_cpsr(cpsr);
+        }
+        (val as i32).wrapping_shr(shift_amount) as u32
+    }
+
+    /// ROR
+    /// Rotate right
+    fn ror(&mut self, val: u32, shift_amount: u32) -> u32 {
+        val.rotate_right(shift_amount)
+    }
+
     // Logic
 
     /// AND
     /// Bitwise AND
-    fn and(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
+    fn and(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let result = op1 & op2;
-        self.writeback(s, rd, result, set_c);
+        self.writeback(s, rd, result);
     }
 
     /// EOR
     /// Bitwise exclusive OR (xor)
-    fn eor(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
+    fn eor(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let result = op1 ^ op2;
-        self.writeback(s, rd, result, set_c);
+        self.writeback(s, rd, result);
     }
 
     /// ORR
     /// Bitwise inclusive OR
-    fn orr(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
+    fn orr(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let result = op1 | op2;
-        self.writeback(s, rd, result, set_c);
+        self.writeback(s, rd, result);
     }
 
     /// BIC
     /// NOT op2 with AND
-    fn bic(&mut self, s: bool, rd: usize, op1: u32, op2: u32, set_c: Option<bool>) {
+    fn bic(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
         let result = op1 & !op2;
-        self.writeback(s, rd, result, set_c);
+        self.writeback(s, rd, result);
     }
 
     /// MOV
     /// Perform bitwise NOT on op2 to get MVN.
-    fn mov(&mut self, s: bool, rd: usize, op2: u32, set_c: Option<bool>) {
-        self.writeback(s, rd, op2, set_c);
+    fn mov(&mut self, s: bool, rd: usize, op2: u32) {
+        self.writeback(s, rd, op2);
     }
 
     // Comparisons
 
     /// TST
     /// Bitwise AND and set flags.
-    fn tst(&mut self, op1: u32, op2: u32, set_c: Option<bool>) {
+    fn tst(&mut self, op1: u32, op2: u32) {
         let result = op1 & op2;
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::N, test_bit(result, 31));
         cpsr.set(CPSR::Z, result == 0);
-        if let Some(c) = set_c {
-            cpsr.set(CPSR::C, c);
-        }
         self.write_cpsr(cpsr);
     }
 
     /// TEQ
     /// Bitwise OR and set flags.
-    fn teq(&mut self, op1: u32, op2: u32, set_c: Option<bool>) {
+    fn teq(&mut self, op1: u32, op2: u32) {
         let result = op1 | op2;
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::N, test_bit(result, 31));
         cpsr.set(CPSR::Z, result == 0);
-        if let Some(c) = set_c {
-            cpsr.set(CPSR::C, c);
-        }
         self.write_cpsr(cpsr);
     }
 

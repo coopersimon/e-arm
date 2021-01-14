@@ -42,9 +42,21 @@ pub trait Thumbv4: ARMv4 {
         let rs = ((i >> 3) & 0x7) as usize;
         let rd = (i & 0x7) as usize;
         match (i & bits(11, 12)) >> 11 {
-            0b00 => {}, // LSL
-            0b01 => {}, // LSR
-            0b10 => {}, // ASR
+            0b00 => {
+                let shift_amount = (i >> 6) & 0x1F;
+                let val = self.lsl(shift_amount != 0, self.read_reg(rs), shift_amount as u32);
+                self.write_reg(rd, val);
+            },
+            0b01 => {
+                let shift_amount = (i >> 6) & 0x1F;
+                let val = self.lsr(shift_amount != 0, self.read_reg(rs), shift_amount as u32);
+                self.write_reg(rd, val);
+            }
+            0b10 => {
+                let shift_amount = (i >> 6) & 0x1F;
+                let val = self.asr(shift_amount != 0, self.read_reg(rs), shift_amount as u32);
+                self.write_reg(rd, val);
+            }
             0b11 => {
                 let op2 = (i >> 6) & 0x7;
                 match (i & bits(9, 10)) >> 9 {
@@ -65,7 +77,7 @@ pub trait Thumbv4: ARMv4 {
         let rd = ((i >> 8) & 0x7) as usize;
         let imm = (i & 0xFF) as u32;
         match (i & bits(11, 12)) >> 11 {
-            0b00 => self.mov(true, rd, imm, None),
+            0b00 => self.mov(true, rd, imm),
             0b01 => self.cmp(self.read_reg(rd), imm),
             0b10 => self.add(true, rd, self.read_reg(rd), imm),
             0b11 => self.sub(true, rd, self.read_reg(rd), imm),
@@ -124,7 +136,7 @@ pub trait Thumbv4: ARMv4 {
         match (i & bits(8, 9)) >> 8 {
             0b00 => self.add(false, rd, self.read_reg(rd), self.read_reg(rs)),
             0b01 => self.cmp(self.read_reg(rd), self.read_reg(rs)),
-            0b10 => self.mov(false, rd, self.read_reg(rs), None),
+            0b10 => self.mov(false, rd, self.read_reg(rs)),
             0b11 => self.bx(self.read_reg(rs)),
             _ => unreachable!(),
         }
@@ -136,22 +148,42 @@ pub trait Thumbv4: ARMv4 {
         let rs = ((i >> 3) & 7) as usize;
         let rd = (i & 7) as usize;
         match (i & bits(6, 9)) >> 6 {
-            0x0 => self.and(true, rd, self.read_reg(rd), self.read_reg(rs), None),
-            0x1 => self.eor(true, rd, self.read_reg(rd), self.read_reg(rs), None),
-            0x2 => {}, // LSL
-            0x3 => {}, // LSR
-            0x4 => {}, // ASR
+            0x0 => self.and(true, rd, self.read_reg(rd), self.read_reg(rs)),
+            0x1 => self.eor(true, rd, self.read_reg(rd), self.read_reg(rs)),
+            0x2 => {
+                let shift_amount = self.read_reg(rs) & 0x1F;
+                let shifted = self.lsl(shift_amount != 0, self.read_reg(rd), shift_amount);
+                self.write_reg(rd, shifted);
+                return 1;
+            },
+            0x3 => {
+                let shift_amount = self.read_reg(rs) & 0x1F;
+                let shifted = self.lsr(shift_amount != 0, self.read_reg(rd), shift_amount);
+                self.write_reg(rd, shifted);
+                return 1;
+            },
+            0x4 => {
+                let shift_amount = self.read_reg(rs) & 0x1F;
+                let shifted = self.asr(shift_amount != 0, self.read_reg(rd), shift_amount);
+                self.write_reg(rd, shifted);
+                return 1;
+            },
             0x5 => self.adc(true, rd, self.read_reg(rd), self.read_reg(rs)),
             0x6 => self.adc(true, rd, self.read_reg(rd), !self.read_reg(rs)),
-            0x7 => {}, // ROR
-            0x8 => self.tst(self.read_reg(rd), self.read_reg(rs), None),
+            0x7 => {
+                let shift_amount = self.read_reg(rs) & 0x1F;
+                let shifted = self.ror(self.read_reg(rd), shift_amount);
+                self.write_reg(rd, shifted);
+                return 1;
+            },
+            0x8 => self.tst(self.read_reg(rd), self.read_reg(rs)),
             0x9 => self.sub(true, rd, 0, self.read_reg(rs)),
             0xA => self.cmp(self.read_reg(rd), self.read_reg(rs)),
             0xB => self.cmn(self.read_reg(rd), self.read_reg(rs)),
-            0xC => self.orr(true, rd, self.read_reg(rd), self.read_reg(rs), None),
+            0xC => self.orr(true, rd, self.read_reg(rd), self.read_reg(rs)),
             0xD => return self.mul(true, rd, rd, rs),
-            0xE => self.bic(true, rd, self.read_reg(rd), self.read_reg(rs), None),
-            0xF => self.mov(true, rd, !self.read_reg(rs), None),
+            0xE => self.bic(true, rd, self.read_reg(rd), self.read_reg(rs)),
+            0xF => self.mov(true, rd, !self.read_reg(rs)),
             _ => unreachable!()
         }
         0
