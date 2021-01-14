@@ -113,6 +113,11 @@ impl<M: Mem32> ARMCore for ARM7TDMI<M> {
     }
     fn write_reg(&mut self, n: usize, data: u32) {
         self.regs[n] = data;
+        if n == PC_REG {
+            // Flush pipeline
+            self.fetched_instr = None;
+            self.decoded_instr = None;
+        }
     }
 
     fn read_cpsr(&self) -> CPSR {

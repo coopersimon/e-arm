@@ -1,6 +1,6 @@
 /// Additional utils specific to ARM.
 
-use crate::common::test_bit;
+use crate::common::u32::test_bit;
 
 /// Make fsxc mask for manipulating PSR.
 /// Creates a 32-bit mask based on the status of certain bits in the input value.

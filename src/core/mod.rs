@@ -2,15 +2,17 @@
 
 mod armv4;
 mod armv4_test;
+mod armv4thumb;
 mod utils;
 
 use bitflags::bitflags;
-use crate::common::{bit, bits};
+use crate::common::u32::{bit, bits};
 use crate::coproc::Coprocessor;
 
 pub use armv4::ARMv4;
 
 pub mod constants {
+    pub const SP_REG: usize = 13;
     pub const LINK_REG: usize = 14;
     pub const PC_REG: usize = 15;
 }

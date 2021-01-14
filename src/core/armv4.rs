@@ -5,7 +5,10 @@ use super::{
     utils::mul_cycles,
     *
 };
-use crate::common::*;
+use crate::common::{
+    u32::*,
+    u64, lo_64, hi_64, make_64
+};
 use crate::memory::Mem32;
 
 /*mod Cond {
@@ -37,7 +40,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         const BRANCH: u32 = 0b10 << 26;
         const TRANSFER: u32 = 0b01 << 26;
         const ALU: u32 = 0b00 << 26;
-        if self.check_cond(i) {
+        if self.check_cond(i >> 28) {
             match i & bits(26, 27) {
                 COPROC      => self.decode_coproc(i),
                 BRANCH      => self.decode_branch(i),
@@ -52,8 +55,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
     /// Check if the instruction should run based on the condition.
     fn check_cond(&self, i: u32) -> bool {
-        const SHIFT: usize = 28;
-        match i >> SHIFT {
+        match i {
             0x0 => self.read_cpsr().contains(CPSR::Z),  // EQ
             0x1 => !self.read_cpsr().contains(CPSR::Z), // NE
             0x2 => self.read_cpsr().contains(CPSR::C),  // CS
@@ -136,11 +138,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         let coproc = ((i >> 8) & 0xF) as usize;
         let offset = (i & 0xFF) << 2;
 
-        let base_addr = if base_reg == PC_REG {
-            self.read_reg(base_reg).wrapping_add(8)
-        } else {
-            self.read_reg(base_reg)
-        };
+        let base_addr = self.read_reg(base_reg);
         let offset_addr = if test_bit(i, 23) {
             base_addr.wrapping_add(offset)  // Inc
         } else {
@@ -192,11 +190,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         let data_reg = ((i >> 12) & 0xF) as usize;
         let offset = self.offset(i);
 
-        let base_addr = if base_reg == PC_REG {
-            self.read_reg(base_reg).wrapping_add(8)
-        } else {
-            self.read_reg(base_reg)
-        };
+        let base_addr = self.read_reg(base_reg);
         let offset_addr = if test_bit(i, 23) {
             base_addr.wrapping_add(offset)  // Inc
         } else {
@@ -319,6 +313,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
 
         // TODO: optimise this check
         if !test_bit(i, 25) && test_bit(i, 4) {
+            // TODO: re-dec PC
             1   // Register shift takes an extra internal cycle
         } else {
             0
@@ -332,7 +327,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         if msr && (rd == 0xF) {
             if !test_bit(i, 25) {
                 match i & 0xFF0 {
-                    0xF10 if rn == 0xF => self.bx(i),
+                    0xF10 if rn == 0xF => self.bx(self.read_reg((i & 0xF) as usize)),
                     0x000 => self.msr(spsr, i),
                     _ => {self.undefined();},
                 }
@@ -363,6 +358,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         let shift_type = (i >> 5) & 3;
             // Shift by register:
         let shift = if test_bit(i, 4) {
+            // TODO: inc PC
             let shift_reg = (i >> 8) & 0xF;
             self.read_reg(shift_reg as usize) & 0xFF
 
@@ -450,11 +446,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         let data_reg = ((i >> 12) & 0xF) as usize;
         let offset = self.halfword_offset(i);
 
-        let base_addr = if base_reg == PC_REG {
-            self.read_reg(base_reg).wrapping_add(8)
-        } else {
-            self.read_reg(base_reg)
-        };
+        let base_addr = self.read_reg(base_reg);
         let offset_addr = if test_bit(i, 23) {
             base_addr.wrapping_add(offset)  // Inc
         } else {
@@ -522,6 +514,8 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         } else {
             self.stm(transfer_addr, data_regs, pre_index)
         };
+
+        // TODO: bit 22
 
         if test_bit(i, 21) {
             // Write offset address back into base register.
@@ -738,7 +732,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         self.write_reg(rd_hi, hi_64(result));
         if s {
             let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
@@ -759,7 +753,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         self.write_reg(rd_hi, hi_64(result));
         if s {
             let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
@@ -778,7 +772,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         self.write_reg(rd_hi, hi_64(result));
         if s {
             let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
@@ -799,7 +793,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         self.write_reg(rd_hi, hi_64(result));
         if s {
             let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit_64(result, 31));
+            cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
             self.write_cpsr(cpsr);
@@ -820,7 +814,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         };
 
         let current_pc = self.read_reg(PC_REG);
-        self.write_reg(PC_REG, current_pc.wrapping_add(4).wrapping_add(offset));
+        self.write_reg(PC_REG, current_pc.wrapping_add(offset));
     }
 
     /// BL
@@ -834,18 +828,17 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         };
 
         let current_pc = self.read_reg(PC_REG);
-        self.write_reg(LINK_REG, current_pc);
-        self.write_reg(PC_REG, current_pc.wrapping_add(4).wrapping_add(offset));
+        self.write_reg(LINK_REG, current_pc.wrapping_sub(4));
+        self.write_reg(PC_REG, current_pc.wrapping_add(offset));
     }
 
     /// BX
     /// Branch and exchange - switch to Thumb ISA
-    fn bx(&mut self, i: u32) {
-        let reg = self.read_reg((i & 0xF) as usize);
+    fn bx(&mut self, dest: u32) {
         let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::T, (reg & 1) != 0);
+        cpsr.set(CPSR::T, (dest & 1) != 0);
         self.write_cpsr(cpsr);
-        self.write_reg(PC_REG, reg & 0xFFFFFFFE);
+        self.write_reg(PC_REG, dest & 0xFFFFFFFE);
     }
 
     /// SWI
@@ -927,7 +920,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Store a single word or byte into memory.
     fn str(&mut self, byte: bool, addr: u32, src_reg: usize) -> usize {
         let data = if src_reg == PC_REG {
-            self.read_reg(src_reg).wrapping_add(12)
+            self.read_reg(src_reg).wrapping_add(4)
         } else {
             self.read_reg(src_reg)
         };
@@ -950,7 +943,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Store 2 bytes into memory.
     fn strh(&mut self, addr: u32, src_reg: usize) -> usize {
         let data = if src_reg == PC_REG {
-            self.read_reg(src_reg).wrapping_add(12)
+            self.read_reg(src_reg).wrapping_add(4)
         } else {
             self.read_reg(src_reg)
         };
