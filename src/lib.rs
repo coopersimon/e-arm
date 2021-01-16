@@ -19,3 +19,7 @@ pub use crate::coproc::{
 pub use crate::arm7::{
     ARM7TDMI
 };
+
+pub trait Clockable {
+    fn clock(&mut self, cycles: usize);
+}

@@ -12,8 +12,9 @@ use crate::core::{
 };
 use crate::memory::Mem32;
 use crate::coproc::Coprocessor;
+use crate::Clockable;
 
-pub struct ARM7TDMI<M: Mem32> {
+pub struct ARM7TDMI<M: Mem32 + Clockable> {
     mode: Mode,
 
     regs: [u32; 16],
@@ -37,7 +38,7 @@ pub struct ARM7TDMI<M: Mem32> {
     decoded_instr: Option<u32>,
 }
 
-impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
+impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
     pub fn new(mem: M, coproc: [Option<Box<dyn Coprocessor>>; 16]) -> Self {
         Self {
             mode: Mode::USR,
@@ -63,10 +64,13 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         }
     }
 
-    /// Step a single instruction.
+    /// Advance a single instruction through the pipeline.
+    /// Will always fetch a new instruction,
+    /// however it may not always execute one.
+    /// 
     /// Returns how many cycles passed.
     pub fn step(&mut self) -> usize {
-        if self.cpsr.contains(CPSR::T) {
+        let cycles = if self.cpsr.contains(CPSR::T) {
             // Execute the decoded instr.
             let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
                 self.execute_thumb(executing_instr as u16)
@@ -96,11 +100,13 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             self.fetched_instr = Some(new_fetched_instr);
             // Calc cycles
             fetch_cycles + execute_cycles
-        }
+        };
+        self.mem.clock(cycles);
+        cycles
     }
 }
 
-impl<M: Mem32<Addr = u32>> Mem32 for ARM7TDMI<M> {
+impl<M: Mem32<Addr = u32> + Clockable> Mem32 for ARM7TDMI<M> {
     type Addr = u32;
 
     fn load_byte(&mut self, addr: Self::Addr) -> (u8, usize) {
@@ -125,7 +131,7 @@ impl<M: Mem32<Addr = u32>> Mem32 for ARM7TDMI<M> {
     }
 }
 
-impl<M: Mem32> ARMCore for ARM7TDMI<M> {
+impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -325,5 +331,5 @@ impl<M: Mem32> ARMCore for ARM7TDMI<M> {
     }
 }
 
-impl<M: Mem32<Addr = u32>> ARMv4 for ARM7TDMI<M> {}
-impl<M: Mem32<Addr = u32>> Thumbv4 for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32> + Clockable> ARMv4 for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32> + Clockable> Thumbv4 for ARM7TDMI<M> {}
