@@ -1,5 +1,7 @@
 /// ARM7TDMI processor.
 
+mod utils;
+
 use crate::core::{
     constants::*,
     Mode,
@@ -33,14 +35,14 @@ pub struct ARM7TDMI<M: Mem32 + Clockable> {
     svc_spsr: SPSR,
 
     mem:    M,
-    coproc: [Option<Box<dyn Coprocessor>>; 16],
+    coproc: Box<[Option<Box<dyn Coprocessor>>]>,
     
     fetched_instr: Option<u32>,
     decoded_instr: Option<u32>,
 }
 
 impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
-    pub fn new(mem: M, coproc: [Option<Box<dyn Coprocessor>>; 16]) -> Self {
+    pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Self {
         Self {
             mode: Mode::USR,
             regs: [0; 16],
@@ -58,7 +60,7 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
             svc_spsr: Default::default(),
 
             mem:    mem,
-            coproc: coproc,
+            coproc: utils::to_slice(coproc),
 
             fetched_instr: None,
             decoded_instr: None,
