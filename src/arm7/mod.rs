@@ -2,7 +2,6 @@
 
 use crate::core::{
     constants::*,
-    Exception,
     Mode,
     CPSR,
     SPSR,
@@ -12,7 +11,9 @@ use crate::core::{
 };
 use crate::memory::Mem32;
 use crate::coproc::Coprocessor;
-use crate::Clockable;
+use crate::{
+    Clockable, Exception
+};
 
 pub struct ARM7TDMI<M: Mem32 + Clockable> {
     mode: Mode,
@@ -101,7 +102,10 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
             // Calc cycles
             fetch_cycles + execute_cycles
         };
-        self.mem.clock(cycles);
+        // Check if anything caused an exception in the CPU.
+        if let Some(exception) = self.mem.clock(cycles) {
+            self.trigger_exception(exception);
+        }
         cycles
     }
 }
@@ -228,7 +232,7 @@ impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
                 self.fiq_regs[4] = self.regs[12];
                 self.fiq_regs[5] = self.regs[13];
                 self.fiq_regs[6] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {4} else {8};
                 self.regs[PC_REG] = 0x0000_001C;
                 self.fiq_spsr = self.cpsr;
 
@@ -240,7 +244,7 @@ impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
             Interrupt => {
                 self.irq_regs[0] = self.regs[13];
                 self.irq_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {4} else {8};
                 self.regs[PC_REG] = 0x0000_0018;
                 self.irq_spsr = self.cpsr;
 
@@ -264,7 +268,7 @@ impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
             SoftwareInterrupt => {
                 self.svc_regs[0] = self.regs[13];
                 self.svc_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_0008;
                 self.svc_spsr = self.cpsr;
 
@@ -276,7 +280,7 @@ impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
             UndefinedInstruction => {
                 self.und_regs[0] = self.regs[13];
                 self.und_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_0004;
                 self.und_spsr = self.cpsr;
 

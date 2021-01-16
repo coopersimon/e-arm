@@ -576,7 +576,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// Called when an undefined instruction is encountered.
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
-        self.trigger_exception(Exception::UndefinedInstruction);
+        self.trigger_exception(crate::Exception::UndefinedInstruction);
         0
     }
 
@@ -927,7 +927,7 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// SWI
     /// Software interrupt
     fn swi(&mut self) {
-        self.trigger_exception(Exception::SoftwareInterrupt);
+        self.trigger_exception(crate::Exception::SoftwareInterrupt);
     }
 
     // Data transfer

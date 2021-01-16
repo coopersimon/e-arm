@@ -73,7 +73,7 @@ pub trait ARMCore {
     fn read_spsr(&self) -> CPSR;
     fn write_spsr(&mut self, data: CPSR);
 
-    fn trigger_exception(&mut self, exception: Exception);
+    fn trigger_exception(&mut self, exception: crate::Exception);
     fn return_from_exception(&mut self);
 
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
@@ -102,17 +102,4 @@ impl From<Mode> for CPSR {
             ABT => CPSR::ABT,
         }
     }
-}
-
-/// Exceptions that can be triggered in the processor.
-/// Listed in priority order.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Exception {
-    Reset,
-    DataAbort,
-    FastInterrupt,
-    Interrupt,
-    PrefetchAbort,
-    SoftwareInterrupt,
-    UndefinedInstruction,
 }

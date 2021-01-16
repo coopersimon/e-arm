@@ -112,7 +112,7 @@ impl ARMCore for TestARM4Core {
         self.spsr = data;
     }
 
-    fn trigger_exception(&mut self, exception: Exception) {
+    fn trigger_exception(&mut self, exception: crate::Exception) {
         // TODO...
     }
     fn return_from_exception(&mut self) {

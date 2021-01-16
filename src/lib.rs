@@ -20,6 +20,19 @@ pub use crate::arm7::{
     ARM7TDMI
 };
 
+/// Exceptions that can be triggered in the processor.
+/// Listed in priority order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Exception {
+    Reset,
+    DataAbort,
+    FastInterrupt,
+    Interrupt,
+    PrefetchAbort,
+    SoftwareInterrupt,
+    UndefinedInstruction,
+}
+
 pub trait Clockable {
-    fn clock(&mut self, cycles: usize);
+    fn clock(&mut self, cycles: usize) -> Option<Exception>;
 }
