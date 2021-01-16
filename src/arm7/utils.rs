@@ -2,12 +2,14 @@
 
 use crate::Coprocessor;
 
-// TODO: use array when const generics are in rust
-pub fn to_slice(coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Box<[Option<Box<dyn Coprocessor>>]> {
-    let mut ret = vec![None; 16];
+const NUM_COPROCESSORS: usize = 16;
 
-    for (i, c) in coproc.drain() {
-        ret[i] = Some(c);
+// TODO: use array when const generics are in rust
+pub fn to_slice(mut coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Box<[Option<Box<dyn Coprocessor>>]> {
+    let mut ret = Vec::new();
+
+    for i in 0..NUM_COPROCESSORS {
+        ret[i] = coproc.remove(&i);
     }
 
     ret.into_boxed_slice()
