@@ -7,7 +7,8 @@ use crate::core::{
     CPSR,
     SPSR,
     ARMCore,
-    ARMv4
+    ARMv4,
+    Thumbv4
 };
 use crate::memory::Mem32;
 use crate::coproc::Coprocessor;
@@ -65,20 +66,37 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     /// Step a single instruction.
     /// Returns how many cycles passed.
     pub fn step(&mut self) -> usize {
-        // Execute the decoded instr.
-        let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
-            self.execute_instruction(executing_instr)
+        if self.cpsr.contains(CPSR::T) {
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
+                self.execute_thumb(executing_instr as u16)
+            } else {
+                0
+            };
+            // Fetch the next instr.
+            let (new_fetched_instr, fetch_cycles) = self.load_halfword(self.regs[PC_REG]);
+            self.regs[PC_REG] += 2;
+            // Shift the pipeline
+            self.decoded_instr = self.fetched_instr;
+            self.fetched_instr = Some(new_fetched_instr as u32);
+            // Calc cycles
+            fetch_cycles + execute_cycles
         } else {
-            0
-        };
-        // Fetch the next instr.
-        let (new_fetched_instr, fetch_cycles) = self.load_word(self.regs[PC_REG]);
-        self.regs[PC_REG] += 4;
-        // Shift the pipeline
-        self.decoded_instr = self.fetched_instr;
-        self.fetched_instr = Some(new_fetched_instr);
-        // Calc cycles
-        fetch_cycles + execute_cycles
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
+                self.execute_instruction(executing_instr)
+            } else {
+                0
+            };
+            // Fetch the next instr.
+            let (new_fetched_instr, fetch_cycles) = self.load_word(self.regs[PC_REG]);
+            self.regs[PC_REG] += 4;
+            // Shift the pipeline
+            self.decoded_instr = self.fetched_instr;
+            self.fetched_instr = Some(new_fetched_instr);
+            // Calc cycles
+            fetch_cycles + execute_cycles
+        }
     }
 }
 
@@ -117,6 +135,27 @@ impl<M: Mem32> ARMCore for ARM7TDMI<M> {
             // Flush pipeline
             self.fetched_instr = None;
             self.decoded_instr = None;
+        }
+    }
+
+    fn read_usr_reg(&self, n: usize) -> u32 {
+        match n {
+            13..=14 if self.mode == Mode::IRQ => self.irq_regs[n - 13],
+            13..=14 if self.mode == Mode::UND => self.und_regs[n - 13],
+            13..=14 if self.mode == Mode::SVC => self.svc_regs[n - 13],
+            13..=14 if self.mode == Mode::ABT => self.abt_regs[n - 13],
+            8..=14 if self.mode == Mode::FIQ => self.fiq_regs[n - 8],
+            _ => self.regs[n],
+        }
+    }
+    fn write_usr_reg(&mut self, n: usize, data: u32) {
+        match n {
+            13..=14 if self.mode == Mode::IRQ => self.irq_regs[n - 13] = data,
+            13..=14 if self.mode == Mode::UND => self.und_regs[n - 13] = data,
+            13..=14 if self.mode == Mode::SVC => self.svc_regs[n - 13] = data,
+            13..=14 if self.mode == Mode::ABT => self.abt_regs[n - 13] = data,
+            8..=14 if self.mode == Mode::FIQ => self.fiq_regs[n - 8] = data,
+            _ => self.regs[n] = data,
         }
     }
 
@@ -287,3 +326,4 @@ impl<M: Mem32> ARMCore for ARM7TDMI<M> {
 }
 
 impl<M: Mem32<Addr = u32>> ARMv4 for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32>> Thumbv4 for ARM7TDMI<M> {}

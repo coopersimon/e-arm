@@ -560,12 +560,10 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
         let pre_index = test_bit(i, 24) == increment;
 
         let cycles = if test_bit(i, 20) {
-            self.ldm(transfer_addr, data_regs, pre_index)
+            self.ldm(transfer_addr, data_regs, pre_index, test_bit(i, 22))
         } else {
-            self.stm(transfer_addr, data_regs, pre_index)
+            self.stm(transfer_addr, data_regs, pre_index, test_bit(i, 22))
         };
-
-        // TODO: bit 22
 
         if test_bit(i, 21) {
             // Write offset address back into base register.
@@ -1038,59 +1036,69 @@ pub trait ARMv4: ARMCore + Mem32<Addr = u32> {
     /// LDM
     /// Block load from memory into registers.
     /// Start from the base address (addr). Load each register in low-high.
-    /// Add 4 to the address before loading if pre == true.
-    fn ldm(&mut self, mut addr: u32, regs: u32, pre: bool) -> usize {
-        if pre {
-            (0..16).fold(0, |acc, reg| {
-                if test_bit(regs, reg) {
-                    addr += 4;
-                    let (data, cycles) = self.load_word(addr);
-                    self.write_reg(reg, data);
-                    acc + cycles
+    /// Adds 4 to the address before loading if pre == true.
+    /// 
+    /// If s == true, then the processor will return from exception if PC is loaded,
+    /// or it will transfer into user registers.
+    fn ldm(&mut self, mut addr: u32, regs: u32, pre: bool, s: bool) -> usize {
+        let load_from_user = s && !test_bit(regs, PC_REG);
+        let cycles = if pre {
+            (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
+                addr += 4;
+                let (data, cycles) = self.load_word(addr);
+                if load_from_user {
+                    self.write_usr_reg(reg, data);
                 } else {
-                    acc
+                    self.write_reg(reg, data);
                 }
+                acc + cycles
             }) + 1
         } else {
-            (0..16).fold(0, |acc, reg| {
-                if test_bit(regs, reg) {
-                    let (data, cycles) = self.load_word(addr);
-                    self.write_reg(reg, data);
-                    addr += 4;
-                    acc + cycles
+            (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
+                let (data, cycles) = self.load_word(addr);
+                if load_from_user {
+                    self.write_usr_reg(reg, data);
                 } else {
-                    acc
+                    self.write_reg(reg, data);
                 }
+                addr += 4;
+                acc + cycles
             }) + 1
+        };
+        if s && test_bit(regs, PC_REG) {
+            self.return_from_exception();
         }
+        cycles
     }
 
     /// STM
     /// Block store from registers into memory.
     /// Start from the base address (addr). Store each register in low-high.
-    /// Add 4 to the address before storing if pre == true.
-    fn stm(&mut self, mut addr: u32, regs: u32, pre: bool) -> usize {
+    /// Adds 4 to the address before storing if pre == true.
+    /// 
+    /// If s == true, then the processor will transfer from user registers.
+    fn stm(&mut self, mut addr: u32, regs: u32, pre: bool, s: bool) -> usize {
         if pre {
-            (0..16).fold(0, |acc, reg| {
-                if test_bit(regs, reg) {
-                    addr += 4;
-                    let data = self.read_reg(reg);
-                    let cycles = self.store_word(addr, data);
-                    acc + cycles
+            (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
+                addr += 4;
+                let data = if s {
+                    self.read_usr_reg(reg)
                 } else {
-                    acc
-                }
+                    self.read_reg(reg)
+                };
+                let cycles = self.store_word(addr, data);
+                acc + cycles
             }) + 1
         } else {
-            (0..16).fold(0, |acc, reg| {
-                if test_bit(regs, reg) {
-                    let data = self.read_reg(reg);
-                    let cycles = self.store_word(addr, data);
-                    addr += 4;
-                    acc + cycles
+            (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
+                let data = if s {
+                    self.read_usr_reg(reg)
                 } else {
-                    acc
-                }
+                    self.read_reg(reg)
+                };
+                let cycles = self.store_word(addr, data);
+                addr += 4;
+                acc + cycles
             }) + 1
         }
     }

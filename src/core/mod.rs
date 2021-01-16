@@ -10,6 +10,7 @@ use crate::common::u32::{bit, bits};
 use crate::coproc::Coprocessor;
 
 pub use armv4::ARMv4;
+pub use armv4thumb::Thumbv4;
 
 pub mod constants {
     pub const SP_REG: usize = 13;
@@ -59,6 +60,12 @@ pub type SPSR = CPSR;
 pub trait ARMCore {
     fn read_reg(&self, n: usize) -> u32;
     fn write_reg(&mut self, n: usize, data: u32);
+
+    /// For STM when force usr-reg access.
+    fn read_usr_reg(&self, n: usize) -> u32;
+    /// For LDM when force usr-reg access.
+    /// Never use for writing PC.
+    fn write_usr_reg(&mut self, n: usize, data: u32);
 
     fn read_cpsr(&self) -> CPSR;
     fn write_cpsr(&mut self, data: CPSR);

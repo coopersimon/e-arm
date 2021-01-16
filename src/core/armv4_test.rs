@@ -91,6 +91,13 @@ impl ARMCore for TestARM4Core {
         self.regs[n] = data;
     }
 
+    fn read_usr_reg(&self, n: usize) -> u32 {
+        self.regs[n]
+    }
+    fn write_usr_reg(&mut self, n: usize, data: u32) {
+        self.regs[n] = data;
+    }
+
     fn read_cpsr(&self) -> CPSR {
         self.cpsr
     }

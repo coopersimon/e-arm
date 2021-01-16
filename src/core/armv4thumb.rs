@@ -2,11 +2,9 @@
 
 use super::{
     constants::*,
-    utils::mul_cycles,
     armv4::ARMv4
 };
 use crate::common::u16::*;
-use crate::memory::Mem32;
 
 
 pub trait Thumbv4: ARMv4 {
@@ -264,14 +262,14 @@ pub trait Thumbv4: ARMv4 {
             let offset = rlist.count_ones() * 4;
             let end_addr = base_addr.wrapping_add(offset);
             self.write_reg(SP_REG, end_addr);
-            self.ldm(base_addr, rlist as u32, false)
+            self.ldm(base_addr, rlist as u32, false, false)
         } else {
             // PUSH
             rlist |= (i & bit(8)) << 6;
             let offset = rlist.count_ones() * 4;
             let end_addr = base_addr.wrapping_sub(offset);
             self.write_reg(SP_REG, end_addr);
-            self.stm(end_addr, rlist as u32, false)
+            self.stm(end_addr, rlist as u32, false, false)
         }
     }
 
@@ -307,24 +305,40 @@ pub trait Thumbv4: ARMv4 {
         let end_addr = base_addr.wrapping_add(offset);
         self.write_reg(rb, end_addr);
         if test_bit(i, 11) {
-            self.ldm(base_addr, rlist, false)
+            self.ldm(base_addr, rlist, false, false)
         } else {
-            self.stm(base_addr, rlist, false)
+            self.stm(base_addr, rlist, false, false)
         }
     }
 
     /// Decode branches
     fn decode_thumb_branch(&mut self, i: u16) -> usize {
         match (i & bits(11, 12)) >> 11 {
-            0b00 => {
-                // short branch
+            0b00 => {   // B
+                let mut offset_imm = (i & bits(0, 10)) * 2;
+                if test_bit(offset_imm, 11) {
+                    offset_imm |= bits(12, 15);
+                }
+                let offset = ((offset_imm as i16) as i32) as u32;
+                let pc = self.read_reg(PC_REG);
+                self.write_reg(PC_REG, pc.wrapping_add(offset));
             },
             0b01 => {self.undefined();},
-            0b10 => {
-                // set upper 11 bits of branch
+            0b10 => {   // Long branch
+                let mut imm = i & bits(0, 10);
+                if test_bit(imm, 10) {
+                    imm |= bits(11, 15);
+                }
+                let imm32 = ((imm as i16) as i32) as u32;
+                let target_addr = self.read_reg(PC_REG).wrapping_add(imm32 << 12);
+                self.write_reg(LINK_REG, target_addr);
             },
-            0b11 => {
-                // BL
+            0b11 => {   // BL
+                let imm = ((i & bits(0, 10)) * 2) as u32;
+                let return_addr = self.read_reg(PC_REG).wrapping_sub(2);
+                let dest = self.read_reg(LINK_REG).wrapping_add(imm);
+                self.write_reg(PC_REG, dest);
+                self.write_reg(LINK_REG, return_addr | 1);
             },
             _ => unreachable!()
         }
