@@ -5,11 +5,15 @@ mod memory;
 mod coproc;
 
 pub use crate::core::{
-    ARMCore, ARMv4
+    ARMCore, ARMv4, Thumbv4
 };
 
 pub use crate::memory::{
     Mem32
+};
+
+pub use crate::coproc::{
+    Coprocessor
 };
 
 pub use crate::arm7::{
