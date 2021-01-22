@@ -5,9 +5,9 @@ use super::{
     armv4::ARMv4
 };
 use crate::common::u16::*;
+use crate::memory::Mem32;
 
-
-pub trait Thumbv4: ARMv4 {
+pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
     /// Decode and execute the instruction.
     /// 
     /// Returns the number of cycles needed to execute it.

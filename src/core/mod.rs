@@ -8,6 +8,7 @@ mod utils;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
 use crate::coproc::Coprocessor;
+use crate::memory::Mem32;
 
 pub use armv4::ARMv4;
 pub use armv4thumb::Thumbv4;
@@ -57,7 +58,7 @@ impl CPSR {
 
 pub type SPSR = CPSR;
 
-pub trait ARMCore {
+pub trait ARMCore<M: Mem32> {
     fn read_reg(&self, n: usize) -> u32;
     fn write_reg(&mut self, n: usize, data: u32);
 
@@ -76,6 +77,7 @@ pub trait ARMCore {
     fn trigger_exception(&mut self, exception: crate::Exception);
     fn return_from_exception(&mut self);
 
+    fn ref_mem<'a>(&'a mut self) -> &'a mut M;
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
 }
 

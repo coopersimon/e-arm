@@ -16,74 +16,82 @@ struct TestARM4Core {
     cpsr: CPSR,
     spsr: CPSR,
 
-    memory: Vec<u32>,
+    memory: TestMem,
 }
 
 impl TestARM4Core {
     fn new() -> Self {
-        let data = (0..1024*64).map(|i| (i & 0xFF) as u8)
-            .collect::<Vec<_>>()
-            .chunks_exact(4)
-            .map(make_32)
-            .collect::<Vec<_>>();
         Self {
             regs: [0; 16],
 
             cpsr: Default::default(),
             spsr: Default::default(),
 
-            memory: data,
+            memory: TestMem::new(1024*64),
         }
     }
 }
 
-impl Mem32 for TestARM4Core {
+struct TestMem(Vec<u32>);
+
+impl TestMem {
+    fn new(size: usize) -> Self {
+        Self((0..size).map(|i| (i & 0xFF) as u8)
+            .collect::<Vec<_>>()
+            .chunks_exact(4)
+            .map(make_32)
+            .collect::<Vec<_>>()
+        )
+    }
+}
+
+impl Mem32 for TestMem {
     type Addr = u32;
 
     fn load_byte(&mut self, addr: Self::Addr) -> (u8, usize) {
         let idx = (addr >> 2) as usize;
-        let data = self.memory[idx];
+        let data = self.0[idx];
         let shift = (addr & 3) * 8;
         let ret = (data >> shift) as u8;
         (ret, 1)
     }
     fn store_byte(&mut self, addr: Self::Addr, data: u8) -> usize {
         let idx = (addr >> 2) as usize;
-        let stored = self.memory[idx];
+        let stored = self.0[idx];
         let shift = (addr & 3) * 8;
         let mask = !(0xFF << shift);
-        self.memory[idx] = (stored & mask) | ((data as u32) << shift);
+        self.0[idx] = (stored & mask) | ((data as u32) << shift);
         1
     }
 
     fn load_halfword(&mut self, addr: Self::Addr) -> (u16, usize) {
         let idx = (addr >> 2) as usize;
-        let data = self.memory[idx];
+        let data = self.0[idx];
         let shift = (addr & 2) * 8;
         let ret = (data >> shift) as u16;
         (ret, 1)
     }
     fn store_halfword(&mut self, addr: Self::Addr, data: u16) -> usize {
         let idx = (addr >> 2) as usize;
-        let stored = self.memory[idx];
+        let stored = self.0[idx];
         let shift = (addr & 2) * 8;
         let mask = !(0xFFFF << shift);
-        self.memory[idx] = (stored & mask) | ((data as u32) << shift);
+        self.0[idx] = (stored & mask) | ((data as u32) << shift);
         1
     }
 
     fn load_word(&mut self, addr: Self::Addr) -> (u32, usize) {
         let idx = (addr >> 2) as usize;
-        (self.memory[idx], 1)
+        (self.0[idx], 1)
     }
     fn store_word(&mut self, addr: Self::Addr, data: u32) -> usize {
         let idx = (addr >> 2) as usize;
-        self.memory[idx] = data;
+        self.0[idx] = data;
         1
     }
 }
 
-impl ARMCore for TestARM4Core {
+impl ARMCore<TestMem> for TestARM4Core {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -119,12 +127,16 @@ impl ARMCore for TestARM4Core {
         // TODO...
     }
 
+    fn ref_mem<'a>(&'a mut self) -> &'a mut TestMem {
+        &mut self.memory
+    }
+
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
         None
     }
 }
 
-impl ARMv4 for TestARM4Core {}
+impl ARMv4<TestMem> for TestARM4Core {}
 
 // Use to setup in state
 #[derive(Default)]

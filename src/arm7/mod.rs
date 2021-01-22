@@ -81,7 +81,7 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
                 0
             };
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.load_halfword(self.regs[PC_REG]);
+            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.regs[PC_REG]);
             self.regs[PC_REG] += 2;
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
@@ -96,7 +96,7 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
                 0
             };
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.load_word(self.regs[PC_REG]);
+            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.regs[PC_REG]);
             self.regs[PC_REG] += 4;
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
@@ -112,32 +112,7 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
     }
 }
 
-impl<M: Mem32<Addr = u32> + Clockable> Mem32 for ARM7TDMI<M> {
-    type Addr = u32;
-
-    fn load_byte(&mut self, addr: Self::Addr) -> (u8, usize) {
-        self.mem.load_byte(addr)
-    }
-    fn store_byte(&mut self, addr: Self::Addr, data: u8) -> usize {
-        self.mem.store_byte(addr, data)
-    }
-
-    fn load_halfword(&mut self, addr: Self::Addr) -> (u16, usize) {
-        self.mem.load_halfword(addr)
-    }
-    fn store_halfword(&mut self, addr: Self::Addr, data: u16) -> usize {
-        self.mem.store_halfword(addr, data)
-    }
-
-    fn load_word(&mut self, addr: Self::Addr) -> (u32, usize) {
-        self.mem.load_word(addr)
-    }
-    fn store_word(&mut self, addr: Self::Addr, data: u32) -> usize {
-        self.mem.store_word(addr, data)
-    }
-}
-
-impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
+impl<M: Mem32 + Clockable> ARMCore<M> for ARM7TDMI<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -332,10 +307,14 @@ impl<M: Mem32 + Clockable> ARMCore for ARM7TDMI<M> {
         self.mode = USR;
     }
 
+    fn ref_mem<'a>(&'a mut self) -> &'a mut M {
+        &mut self.mem
+    }
+
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
         self.coproc[coproc].as_mut()
     }
 }
 
-impl<M: Mem32<Addr = u32> + Clockable> ARMv4 for ARM7TDMI<M> {}
-impl<M: Mem32<Addr = u32> + Clockable> Thumbv4 for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32> + Clockable> ARMv4<M> for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32> + Clockable> Thumbv4<M> for ARM7TDMI<M> {}
