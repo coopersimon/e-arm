@@ -32,7 +32,3 @@ pub enum Exception {
     SoftwareInterrupt,
     UndefinedInstruction,
 }
-
-pub trait Clockable {
-    fn clock(&mut self, cycles: usize) -> Option<Exception>;
-}

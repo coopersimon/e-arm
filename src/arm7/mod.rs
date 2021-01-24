@@ -13,11 +13,9 @@ use crate::core::{
 };
 use crate::memory::Mem32;
 use crate::coproc::Coprocessor;
-use crate::{
-    Clockable, Exception
-};
+use crate::Exception;
 
-pub struct ARM7TDMI<M: Mem32 + Clockable> {
+pub struct ARM7TDMI<M: Mem32> {
     mode: Mode,
 
     regs: [u32; 16],
@@ -41,7 +39,7 @@ pub struct ARM7TDMI<M: Mem32 + Clockable> {
     decoded_instr: Option<u32>,
 }
 
-impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
+impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Self {
         Self {
             mode: Mode::USR,
@@ -72,6 +70,9 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
     /// however it may not always execute one.
     /// 
     /// Returns how many cycles passed.
+    /// 
+    /// Note that after each step exceptions should be passed to the CPU
+    /// via `trigger_exception`.
     pub fn step(&mut self) -> usize {
         let cycles = if self.cpsr.contains(CPSR::T) {
             // Execute the decoded instr.
@@ -104,15 +105,11 @@ impl<M: Mem32<Addr = u32> + Clockable> ARM7TDMI<M> {
             // Calc cycles
             fetch_cycles + execute_cycles
         };
-        // Check if anything caused an exception in the CPU.
-        if let Some(exception) = self.mem.clock(cycles) {
-            self.trigger_exception(exception);
-        }
         cycles
     }
 }
 
-impl<M: Mem32 + Clockable> ARMCore<M> for ARM7TDMI<M> {
+impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -316,5 +313,5 @@ impl<M: Mem32 + Clockable> ARMCore<M> for ARM7TDMI<M> {
     }
 }
 
-impl<M: Mem32<Addr = u32> + Clockable> ARMv4<M> for ARM7TDMI<M> {}
-impl<M: Mem32<Addr = u32> + Clockable> Thumbv4<M> for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
+impl<M: Mem32<Addr = u32>> Thumbv4<M> for ARM7TDMI<M> {}
