@@ -9,7 +9,7 @@ pub use crate::core::{
 };
 
 pub use crate::memory::{
-    Mem32
+    Mem32, MemCycleType
 };
 
 pub use crate::coproc::{
