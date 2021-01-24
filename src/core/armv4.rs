@@ -9,7 +9,9 @@ use crate::common::{
     u32::*,
     u64, lo_64, hi_64, make_64
 };
-use crate::memory::Mem32;
+use crate::memory::{
+    Mem32, MemCycleType
+};
 
 /*mod Cond {
     const EQ: u32 = 0;     // Z set
@@ -975,14 +977,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let reg_data = self.read_reg(rm);
         if test_bit(i, 22) {
             let mem = self.ref_mem();
-            let (mem_data, load_cycles) = mem.load_byte(addr);
-            let store_cycles = mem.store_byte(addr, reg_data as u8);
+            let (mem_data, load_cycles) = mem.load_byte(MemCycleType::N, addr);
+            let store_cycles = mem.store_byte(MemCycleType::N, addr, reg_data as u8);
             self.write_reg(rd, mem_data as u32);
             load_cycles + store_cycles + 1
         } else {
             let mem = self.ref_mem();
-            let (mem_data, load_cycles) = mem.load_word(addr);
-            let store_cycles = mem.store_word(addr, reg_data);
+            let (mem_data, load_cycles) = mem.load_word(MemCycleType::N, addr);
+            let store_cycles = mem.store_word(MemCycleType::N, addr, reg_data);
             self.write_reg(rd, mem_data);
             load_cycles + store_cycles + 1
         }
@@ -992,10 +994,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Load a single word or byte from memory and store it in a register.
     fn ldr(&mut self, byte: bool, addr: u32, dest_reg: usize) -> usize {
         let (data, cycles) = if byte {
-            let (data_byte, cycles) = self.ref_mem().load_byte(addr);
+            let (data_byte, cycles) = self.ref_mem().load_byte(MemCycleType::N, addr);
             (data_byte as u32, cycles)
         } else {
-            self.ref_mem().load_word(addr)
+            self.ref_mem().load_word(MemCycleType::N, addr)
         };
         self.write_reg(dest_reg, data);
         // Loads take one extra internal cycle.
@@ -1010,17 +1012,18 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         } else {
             self.read_reg(src_reg)
         };
+        self.next_fetch_non_seq();
         if byte {
-            self.ref_mem().store_byte(addr, data as u8)
+            self.ref_mem().store_byte(MemCycleType::N, addr, data as u8)
         } else {
-            self.ref_mem().store_word(addr, data)
+            self.ref_mem().store_word(MemCycleType::N, addr, data)
         }
     }
 
     /// LDRH
     /// Load 2 bytes from memory.
     fn ldrh(&mut self, addr: u32, dest_reg: usize) -> usize {
-        let (data, cycles) = self.ref_mem().load_halfword(addr);
+        let (data, cycles) = self.ref_mem().load_halfword(MemCycleType::N, addr);
         self.write_reg(dest_reg, data as u32);
         cycles + 1
     }
@@ -1033,7 +1036,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         } else {
             self.read_reg(src_reg)
         };
-        self.ref_mem().store_halfword(addr, data as u16)
+        self.next_fetch_non_seq();
+        self.ref_mem().store_halfword(MemCycleType::N, addr, data as u16)
     }
 
     /// LDM
@@ -1046,9 +1050,11 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn ldm(&mut self, mut addr: u32, regs: u32, pre: bool, s: bool) -> usize {
         let load_from_user = s && !test_bit(regs, PC_REG);
         let cycles = if pre {
+            let mut first = true;
             (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
                 addr += 4;
-                let (data, cycles) = self.ref_mem().load_word(addr);
+                let (data, cycles) = self.ref_mem().load_word(if first {MemCycleType::N} else {MemCycleType::S}, addr);
+                first = false;
                 if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
@@ -1057,8 +1063,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 acc + cycles
             }) + 1
         } else {
+            let mut first = true;
             (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
-                let (data, cycles) = self.ref_mem().load_word(addr);
+                let (data, cycles) = self.ref_mem().load_word(if first {MemCycleType::N} else {MemCycleType::S}, addr);
+                first = false;
                 if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
@@ -1081,7 +1089,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// 
     /// If s == true, then the processor will transfer from user registers.
     fn stm(&mut self, mut addr: u32, regs: u32, pre: bool, s: bool) -> usize {
+        self.next_fetch_non_seq();
         if pre {
+            let mut first = true;
             (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
                 addr += 4;
                 let data = if s {
@@ -1089,17 +1099,20 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 } else {
                     self.read_reg(reg)
                 };
-                let cycles = self.ref_mem().store_word(addr, data);
+                let cycles = self.ref_mem().store_word(if first {MemCycleType::N} else {MemCycleType::S}, addr, data);
+                first = false;
                 acc + cycles
             }) + 1
         } else {
+            let mut first = true;
             (0..16).filter(|reg| test_bit(regs, *reg)).fold(0, |acc, reg| {
                 let data = if s {
                     self.read_usr_reg(reg)
                 } else {
                     self.read_reg(reg)
                 };
-                let cycles = self.ref_mem().store_word(addr, data);
+                let cycles = self.ref_mem().store_word(if first {MemCycleType::N} else {MemCycleType::S}, addr, data);
+                first = false;
                 addr += 4;
                 acc + cycles
             }) + 1
@@ -1137,7 +1150,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn stc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) -> usize {
         if let Some(c) = self.ref_coproc(coproc) {
             let (data, cop_cycles) = c.stc(transfer_len, coproc_reg);
-            let mem_cycles = self.ref_mem().store_word(addr, data);
+            let mem_cycles = self.ref_mem().store_word(MemCycleType::N, addr, data);
+            self.next_fetch_non_seq();
             cop_cycles + mem_cycles
         } else {
             self.undefined()
@@ -1148,7 +1162,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Load from memory to coprocessor
     /// TODO: transfer len of more than 1?
     fn ldc(&mut self, transfer_len: bool, addr: u32, coproc: usize, coproc_reg: usize) -> usize {
-        let (data, mem_cycles) = self.ref_mem().load_word(addr);
+        let (data, mem_cycles) = self.ref_mem().load_word(MemCycleType::N, addr);
         if let Some(c) = self.ref_coproc(coproc) {
             c.ldc(transfer_len, coproc_reg, data) + mem_cycles
         } else {

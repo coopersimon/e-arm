@@ -48,14 +48,14 @@ impl TestMem {
 impl Mem32 for TestMem {
     type Addr = u32;
 
-    fn load_byte(&mut self, addr: Self::Addr) -> (u8, usize) {
+    fn load_byte(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u8, usize) {
         let idx = (addr >> 2) as usize;
         let data = self.0[idx];
         let shift = (addr & 3) * 8;
         let ret = (data >> shift) as u8;
         (ret, 1)
     }
-    fn store_byte(&mut self, addr: Self::Addr, data: u8) -> usize {
+    fn store_byte(&mut self, cycle: MemCycleType, addr: Self::Addr, data: u8) -> usize {
         let idx = (addr >> 2) as usize;
         let stored = self.0[idx];
         let shift = (addr & 3) * 8;
@@ -64,14 +64,14 @@ impl Mem32 for TestMem {
         1
     }
 
-    fn load_halfword(&mut self, addr: Self::Addr) -> (u16, usize) {
+    fn load_halfword(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u16, usize) {
         let idx = (addr >> 2) as usize;
         let data = self.0[idx];
         let shift = (addr & 2) * 8;
         let ret = (data >> shift) as u16;
         (ret, 1)
     }
-    fn store_halfword(&mut self, addr: Self::Addr, data: u16) -> usize {
+    fn store_halfword(&mut self, cycle: MemCycleType, addr: Self::Addr, data: u16) -> usize {
         let idx = (addr >> 2) as usize;
         let stored = self.0[idx];
         let shift = (addr & 2) * 8;
@@ -80,11 +80,11 @@ impl Mem32 for TestMem {
         1
     }
 
-    fn load_word(&mut self, addr: Self::Addr) -> (u32, usize) {
+    fn load_word(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u32, usize) {
         let idx = (addr >> 2) as usize;
         (self.0[idx], 1)
     }
-    fn store_word(&mut self, addr: Self::Addr, data: u32) -> usize {
+    fn store_word(&mut self, cycle: MemCycleType, addr: Self::Addr, data: u32) -> usize {
         let idx = (addr >> 2) as usize;
         self.0[idx] = data;
         1
@@ -125,6 +125,10 @@ impl ARMCore<TestMem> for TestARM4Core {
     }
     fn return_from_exception(&mut self) {
         // TODO...
+    }
+
+    fn next_fetch_non_seq(&mut self) {
+        
     }
 
     fn ref_mem<'a>(&'a mut self) -> &'a mut TestMem {

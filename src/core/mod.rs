@@ -77,6 +77,10 @@ pub trait ARMCore<M: Mem32> {
     fn trigger_exception(&mut self, exception: crate::Exception);
     fn return_from_exception(&mut self);
 
+    /// Called when the next fetch is from non-sequential memory.
+    /// Usually called from store instructions.
+    fn next_fetch_non_seq(&mut self);
+
     fn ref_mem<'a>(&'a mut self) -> &'a mut M;
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
 }

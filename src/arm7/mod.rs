@@ -11,7 +11,9 @@ use crate::core::{
     ARMv4,
     Thumbv4
 };
-use crate::memory::Mem32;
+use crate::memory::{
+    Mem32, MemCycleType
+};
 use crate::coproc::Coprocessor;
 use crate::Exception;
 
@@ -37,6 +39,7 @@ pub struct ARM7TDMI<M: Mem32> {
     
     fetched_instr: Option<u32>,
     decoded_instr: Option<u32>,
+    fetch_type:    MemCycleType,
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
@@ -62,6 +65,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
 
             fetched_instr: None,
             decoded_instr: None,
+            fetch_type:    MemCycleType::N,
         }
     }
 
@@ -82,7 +86,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
                 0
             };
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.regs[PC_REG]);
+            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.fetch_type, self.regs[PC_REG]);
             self.regs[PC_REG] += 2;
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
@@ -97,7 +101,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
                 0
             };
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.regs[PC_REG]);
+            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.fetch_type, self.regs[PC_REG]);
             self.regs[PC_REG] += 4;
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
@@ -105,6 +109,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             // Calc cycles
             fetch_cycles + execute_cycles
         };
+        self.fetch_type = MemCycleType::S;
         cycles
     }
 }
@@ -119,6 +124,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             // Flush pipeline
             self.fetched_instr = None;
             self.decoded_instr = None;
+            self.next_fetch_non_seq();
         }
     }
 
@@ -265,6 +271,10 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             },
             _ => {},
         }
+        // Flush pipeline
+        self.fetched_instr = None;
+        self.decoded_instr = None;
+        self.next_fetch_non_seq();
     }
 
     fn return_from_exception(&mut self) {
@@ -303,6 +313,10 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             }
         }
         self.mode = USR;
+    }
+
+    fn next_fetch_non_seq(&mut self) {
+        self.fetch_type = MemCycleType::N;
     }
 
     fn ref_mem<'a>(&'a mut self) -> &'a mut M {
