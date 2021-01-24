@@ -177,7 +177,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
         use Exception::*;
         match exception {
             Reset => {
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_0000;
                 self.svc_spsr = self.cpsr;
 
@@ -189,7 +189,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             DataAbort => {
                 self.abt_regs[0] = self.regs[13];
                 self.abt_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_0010;
                 self.abt_spsr = self.cpsr;
 
@@ -198,7 +198,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
-            FastInterrupt => {
+            FastInterrupt if !self.cpsr.contains(CPSR::F) => {
                 self.fiq_regs[0] = self.regs[8];
                 self.fiq_regs[1] = self.regs[9];
                 self.fiq_regs[2] = self.regs[10];
@@ -206,7 +206,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
                 self.fiq_regs[4] = self.regs[12];
                 self.fiq_regs[5] = self.regs[13];
                 self.fiq_regs[6] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {4} else {8};
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_001C;
                 self.fiq_spsr = self.cpsr;
 
@@ -215,10 +215,10 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I | CPSR::F);
             },
-            Interrupt => {
+            Interrupt if !self.cpsr.contains(CPSR::I) => {
                 self.irq_regs[0] = self.regs[13];
                 self.irq_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {4} else {8};
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_0018;
                 self.irq_spsr = self.cpsr;
 
@@ -230,7 +230,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             PrefetchAbort => {
                 self.abt_regs[0] = self.regs[13];
                 self.abt_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG];
+                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
                 self.regs[PC_REG] = 0x0000_000C;
                 self.abt_spsr = self.cpsr;
 
@@ -263,6 +263,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
+            _ => {},
         }
     }
 
