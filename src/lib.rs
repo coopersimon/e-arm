@@ -3,6 +3,7 @@ mod common;
 mod arm7;
 mod memory;
 mod coproc;
+mod debugger;
 
 pub use crate::core::{
     ARMCore, ARMv4, Thumbv4
@@ -19,6 +20,8 @@ pub use crate::coproc::{
 pub use crate::arm7::{
     ARM7TDMI
 };
+
+pub use crate::debugger::*;
 
 /// Exceptions that can be triggered in the processor.
 /// Listed in priority order.

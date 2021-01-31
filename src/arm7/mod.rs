@@ -16,6 +16,7 @@ use crate::memory::{
 };
 use crate::coproc::Coprocessor;
 use crate::Exception;
+use crate::{Debugger, CPUState};
 
 pub struct ARM7TDMI<M: Mem32> {
     mode: Mode,
@@ -330,3 +331,12 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
 
 impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
 impl<M: Mem32<Addr = u32>> Thumbv4<M> for ARM7TDMI<M> {}
+
+impl<M: Mem32> Debugger for ARM7TDMI<M> {
+    fn inspect_state(&self) -> CPUState {
+        CPUState {
+            regs:   self.regs,
+            flags:  self.cpsr.bits(),
+        }
+    }
+}
