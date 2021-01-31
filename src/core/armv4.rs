@@ -898,7 +898,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             raw_offset << 2
         };
 
-        let current_pc = self.read_reg(PC_REG);
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(4);
         self.write_reg(PC_REG, current_pc.wrapping_add(offset));
     }
 
@@ -912,18 +912,21 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             raw_offset << 2
         };
 
-        let current_pc = self.read_reg(PC_REG);
-        self.write_reg(LINK_REG, current_pc.wrapping_sub(4));
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(4);
+        self.write_reg(LINK_REG, current_pc);
         self.write_reg(PC_REG, current_pc.wrapping_add(offset));
     }
 
     /// BX
     /// Branch and exchange - switch to Thumb ISA
-    fn bx(&mut self, dest: u32) {
+    fn bx(&mut self, reg_val: u32) {
+        let thumb = test_bit(reg_val, 0);
         let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::T, (dest & 1) != 0);
+        cpsr.set(CPSR::T, thumb);
         self.write_cpsr(cpsr);
-        self.write_reg(PC_REG, dest & 0xFFFFFFFE);
+
+        let dest = (reg_val & 0xFFFFFFFE).wrapping_sub(cpsr.instr_size());
+        self.write_reg(PC_REG, dest);
     }
 
     /// SWI

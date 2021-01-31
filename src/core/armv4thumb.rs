@@ -290,7 +290,7 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
         } else if self.check_cond(cond) {
             let offset_i = ((i & 0xFF) as u8) as i8;
             let offset = ((offset_i as i32) << 1) as u32;
-            let current_pc = self.read_reg(PC_REG);
+            let current_pc = self.read_reg(PC_REG).wrapping_sub(2);
             self.write_reg(PC_REG, current_pc.wrapping_add(offset));
         }
         0
@@ -320,7 +320,7 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
                     offset_imm |= bits(12, 15);
                 }
                 let offset = ((offset_imm as i16) as i32) as u32;
-                let pc = self.read_reg(PC_REG);
+                let pc = self.read_reg(PC_REG).wrapping_sub(2);
                 self.write_reg(PC_REG, pc.wrapping_add(offset));
             },
             0b01 => {self.undefined();},
@@ -330,7 +330,7 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
                     imm |= bits(11, 15);
                 }
                 let imm32 = ((imm as i16) as i32) as u32;
-                let target_addr = self.read_reg(PC_REG).wrapping_add(imm32 << 12);
+                let target_addr = self.read_reg(PC_REG).wrapping_sub(2).wrapping_add(imm32 << 12);
                 self.write_reg(LINK_REG, target_addr);
             },
             0b11 => {   // BL
