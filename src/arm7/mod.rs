@@ -332,11 +332,22 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
 impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
 impl<M: Mem32<Addr = u32>> Thumbv4<M> for ARM7TDMI<M> {}
 
-impl<M: Mem32> Debugger for ARM7TDMI<M> {
-    fn inspect_state(&self) -> CPUState {
+impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
+    fn inspect_state(&mut self) -> CPUState {
+        let next_instr = if self.cpsr.contains(CPSR::T) {
+            self.mem.load_halfword(MemCycleType::N, self.regs[PC_REG]).0 as u32
+        } else {
+            self.mem.load_word(MemCycleType::N, self.regs[PC_REG]).0
+        };
         CPUState {
             regs:   self.regs,
             flags:  self.cpsr.bits(),
+
+            pipeline:   [
+                Some(next_instr),
+                self.fetched_instr,
+                self.decoded_instr,
+            ]
         }
     }
 }
