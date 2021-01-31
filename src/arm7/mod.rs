@@ -46,7 +46,7 @@ pub struct ARM7TDMI<M: Mem32> {
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Self {
         Self {
-            mode: Mode::USR,
+            mode: Mode::SVC,
             regs: [0; 16],
             fiq_regs: [0; 7],
             irq_regs: [0; 2],
@@ -54,7 +54,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             abt_regs: [0; 2],
             svc_regs: [0; 2],
 
-            cpsr: Default::default(),
+            cpsr: CPSR::I | CPSR::F | CPSR::SVC,
             fiq_spsr: Default::default(),
             irq_spsr: Default::default(),
             und_spsr: Default::default(),
@@ -79,34 +79,36 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     /// Note that after each step exceptions should be passed to the CPU
     /// via `trigger_exception`.
     pub fn step(&mut self) -> usize {
+        let pc_next = self.regs[PC_REG];
+        let executing_instr = self.decoded_instr;
         let cycles = if self.cpsr.contains(CPSR::T) {
-            // Execute the decoded instr.
-            let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
-                self.execute_thumb(executing_instr as u16)
-            } else {
-                0
-            };
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.fetch_type, self.regs[PC_REG]);
-            self.regs[PC_REG] += 2;
+            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.fetch_type, pc_next);
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
             self.fetched_instr = Some(new_fetched_instr as u32);
-            // Calc cycles
-            fetch_cycles + execute_cycles
-        } else {
             // Execute the decoded instr.
-            let execute_cycles = if let Some(executing_instr) = self.decoded_instr {
-                self.execute_instruction(executing_instr)
+            let execute_cycles = if let Some(instr) = executing_instr {
+                self.execute_thumb(instr as u16)
             } else {
                 0
             };
+            self.regs[PC_REG] += 2;
+            // Calc cycles
+            fetch_cycles + execute_cycles
+        } else {
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.fetch_type, self.regs[PC_REG]);
-            self.regs[PC_REG] += 4;
+            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.fetch_type, pc_next);
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
             self.fetched_instr = Some(new_fetched_instr);
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(instr) = executing_instr {
+                self.execute_instruction(instr)
+            } else {
+                0
+            };
+            self.regs[PC_REG] += 4;
             // Calc cycles
             fetch_cycles + execute_cycles
         };
@@ -120,12 +122,14 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
         self.regs[n]
     }
     fn write_reg(&mut self, n: usize, data: u32) {
-        self.regs[n] = data;
         if n == PC_REG {
             // Flush pipeline
+            self.regs[n] = data - self.cpsr.instr_size();
             self.fetched_instr = None;
             self.decoded_instr = None;
             self.next_fetch_non_seq();
+        } else {
+            self.regs[n] = data;
         }
     }
 
@@ -184,7 +188,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
         use Exception::*;
         match exception {
             Reset => {
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0000;
                 self.svc_spsr = self.cpsr;
 
@@ -196,7 +200,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             DataAbort => {
                 self.abt_regs[0] = self.regs[13];
                 self.abt_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0010;
                 self.abt_spsr = self.cpsr;
 
@@ -213,7 +217,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
                 self.fiq_regs[4] = self.regs[12];
                 self.fiq_regs[5] = self.regs[13];
                 self.fiq_regs[6] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_001C;
                 self.fiq_spsr = self.cpsr;
 
@@ -225,7 +229,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             Interrupt if !self.cpsr.contains(CPSR::I) => {
                 self.irq_regs[0] = self.regs[13];
                 self.irq_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0018;
                 self.irq_spsr = self.cpsr;
 
@@ -237,7 +241,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             PrefetchAbort => {
                 self.abt_regs[0] = self.regs[13];
                 self.abt_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_000C;
                 self.abt_spsr = self.cpsr;
 
@@ -249,7 +253,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             SoftwareInterrupt => {
                 self.svc_regs[0] = self.regs[13];
                 self.svc_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0008;
                 self.svc_spsr = self.cpsr;
 
@@ -261,7 +265,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
             UndefinedInstruction => {
                 self.und_regs[0] = self.regs[13];
                 self.und_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {2} else {4};
+                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0004;
                 self.und_spsr = self.cpsr;
 

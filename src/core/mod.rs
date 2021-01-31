@@ -54,6 +54,10 @@ impl CPSR {
         self.remove(CPSR::MODE);
         self.insert(mode.into());
     }
+
+    pub fn instr_size(&self) -> u32 {
+        if self.contains(CPSR::T) {2} else {4}
+    }
 }
 
 pub type SPSR = CPSR;
