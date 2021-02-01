@@ -172,9 +172,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn decode_branch(&mut self, i: u32) -> usize {
         if test_bit(i, 25) {
             if test_bit(i, 24) {
-                self.b(i);
-            } else {
                 self.bl(i);
+            } else {
+                self.b(i);
             }
             // Branches themselves take 0 additional cycles.
             // The pipeline however is flushed which will lead to extra cycles.
@@ -429,7 +429,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                     _ => unreachable!()
                 };
                 if set_carry {
-                    self.write_cpsr(cpsr);
+                    self.write_flags(cpsr);
                 }
                 return ret;
             }
@@ -456,7 +456,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 let mut cpsr = self.read_cpsr();
                 cpsr.set(CPSR::N, test_bit(result, 31));
                 cpsr.set(CPSR::Z, result == 0);
-                self.write_cpsr(cpsr);
+                self.write_flags(cpsr);
             }
         }
     }
@@ -590,7 +590,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         if set_carry {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::C, test_bit(val, (32 - shift_amount) as usize));
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         val.wrapping_shl(shift_amount)
     }
@@ -601,7 +601,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         if set_carry {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::C, test_bit(val, (shift_amount - 1) as usize));
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         val.wrapping_shr(shift_amount)
     }
@@ -612,7 +612,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         if set_carry {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::C, test_bit(val, (shift_amount - 1) as usize));
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         (val as i32).wrapping_shr(shift_amount) as u32
     }
@@ -668,7 +668,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::N, test_bit(result, 31));
         cpsr.set(CPSR::Z, result == 0);
-        self.write_cpsr(cpsr);
+        self.write_flags(cpsr);
     }
 
     /// TEQ
@@ -678,7 +678,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::N, test_bit(result, 31));
         cpsr.set(CPSR::Z, result == 0);
-        self.write_cpsr(cpsr);
+        self.write_flags(cpsr);
     }
 
     /// CMP
@@ -690,7 +690,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         cpsr.set(CPSR::Z, result == 0);
         cpsr.set(CPSR::C, !overflow);
         cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
-        self.write_cpsr(cpsr);
+        self.write_flags(cpsr);
     }
 
     /// CMP
@@ -702,7 +702,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         cpsr.set(CPSR::Z, result == 0);
         cpsr.set(CPSR::C, overflow);
         cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-        self.write_cpsr(cpsr);
+        self.write_flags(cpsr);
     }
 
     // Arithmetic
@@ -721,7 +721,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 cpsr.set(CPSR::Z, result == 0);
                 cpsr.set(CPSR::C, overflow);
                 cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-                self.write_cpsr(cpsr);
+                self.write_flags(cpsr);
             }
         }
     }
@@ -742,7 +742,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 cpsr.set(CPSR::Z, result == 0);
                 cpsr.set(CPSR::C, !overflow);
                 cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
-                self.write_cpsr(cpsr);
+                self.write_flags(cpsr);
             }
         }
     }
@@ -764,7 +764,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 cpsr.set(CPSR::Z, result == 0);
                 cpsr.set(CPSR::C, o1 || o2);
                 cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-                self.write_cpsr(cpsr);
+                self.write_flags(cpsr);
             }
         }
     }
@@ -783,7 +783,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             cpsr.set(CPSR::N, test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         mul_cycles(op2)
     }
@@ -801,7 +801,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             cpsr.set(CPSR::N, test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         mul_cycles(op2) + 1
     }
@@ -820,7 +820,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         mul_cycles(op2) + 1
     }
@@ -841,7 +841,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         mul_cycles(op2) + 2
     }
@@ -860,7 +860,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         mul_cycles(op2) + 1
     }
@@ -881,7 +881,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
             cpsr.set(CPSR::Z, result == 0);
             cpsr.remove(CPSR::C);
-            self.write_cpsr(cpsr);
+            self.write_flags(cpsr);
         }
         mul_cycles(op2) + 2
     }
@@ -898,8 +898,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             raw_offset << 2
         };
 
-        let current_pc = self.read_reg(PC_REG).wrapping_sub(4);
-        self.write_reg(PC_REG, current_pc.wrapping_add(offset));
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
+        self.do_branch(current_pc.wrapping_add(offset))
     }
 
     /// BL
@@ -912,21 +912,25 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             raw_offset << 2
         };
 
-        let current_pc = self.read_reg(PC_REG).wrapping_sub(4);
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
-        self.write_reg(PC_REG, current_pc.wrapping_add(offset));
+        self.do_branch(current_pc.wrapping_add(offset));
     }
 
     /// BX
     /// Branch and exchange - switch to Thumb ISA
     fn bx(&mut self, reg_val: u32) {
-        let thumb = test_bit(reg_val, 0);
         let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::T, thumb);
-        self.write_cpsr(cpsr);
+        let from_thumb = cpsr.contains(CPSR::T);
+        cpsr.set(CPSR::T, test_bit(reg_val, 0));
+        self.write_flags(cpsr);
 
-        let dest = (reg_val & 0xFFFFFFFE).wrapping_sub(cpsr.instr_size());
-        self.write_reg(PC_REG, dest);
+        let dest = reg_val & 0xFFFFFFFE;
+        if from_thumb {
+            self.do_branch(dest.wrapping_sub(T_SIZE));
+        } else {
+            self.do_branch(dest.wrapping_sub(I_SIZE));
+        }
     }
 
     /// SWI

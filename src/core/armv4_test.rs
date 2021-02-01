@@ -98,6 +98,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn write_reg(&mut self, n: usize, data: u32) {
         self.regs[n] = data;
     }
+    fn do_branch(&mut self, dest: u32) {
+        self.regs[15] = dest;
+    }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
         self.regs[n]
@@ -111,6 +114,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     }
     fn write_cpsr(&mut self, data: CPSR) {
         self.cpsr = data;
+    }
+    fn write_flags(&mut self, flags: CPSR) {
+        self.cpsr = flags;
     }
 
     fn read_spsr(&self) -> CPSR {

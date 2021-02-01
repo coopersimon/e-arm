@@ -19,8 +19,6 @@ use crate::Exception;
 use crate::{Debugger, CPUState};
 
 pub struct ARM7TDMI<M: Mem32> {
-    mode: Mode,
-
     regs: [u32; 16],
     fiq_regs: [u32; 7],
     irq_regs: [u32; 2],
@@ -46,7 +44,6 @@ pub struct ARM7TDMI<M: Mem32> {
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Self {
         Self {
-            mode: Mode::SVC,
             regs: [0; 16],
             fiq_regs: [0; 7],
             irq_regs: [0; 2],
@@ -93,7 +90,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             } else {
                 0
             };
-            self.regs[PC_REG] += 2;
+            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(T_SIZE);
             // Calc cycles
             fetch_cycles + execute_cycles
         } else {
@@ -108,48 +105,89 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             } else {
                 0
             };
-            self.regs[PC_REG] += 4;
+            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(I_SIZE);
             // Calc cycles
             fetch_cycles + execute_cycles
         };
         self.fetch_type = MemCycleType::S;
         cycles
     }
+
+    /// Shadow the registers of the processor.
+    /// 
+    /// Call this both before and after setting cpsr.
+    fn shadow_registers(&mut self, cpsr: CPSR) {
+        use Mode::*;
+        match self.cpsr.mode() {
+            USR => {},
+            FIQ => {
+                std::mem::swap(&mut self.regs[8], &mut self.fiq_regs[0]);
+                std::mem::swap(&mut self.regs[9], &mut self.fiq_regs[1]);
+                std::mem::swap(&mut self.regs[10], &mut self.fiq_regs[2]);
+                std::mem::swap(&mut self.regs[11], &mut self.fiq_regs[3]);
+                std::mem::swap(&mut self.regs[12], &mut self.fiq_regs[4]);
+                std::mem::swap(&mut self.regs[13], &mut self.fiq_regs[5]);
+                std::mem::swap(&mut self.regs[14], &mut self.fiq_regs[6]);
+            },
+            IRQ => {
+                std::mem::swap(&mut self.regs[13], &mut self.irq_regs[0]);
+                std::mem::swap(&mut self.regs[14], &mut self.irq_regs[1]);
+            },
+            UND => {
+                std::mem::swap(&mut self.regs[13], &mut self.und_regs[0]);
+                std::mem::swap(&mut self.regs[14], &mut self.und_regs[1]);
+            },
+            SVC => {
+                std::mem::swap(&mut self.regs[13], &mut self.svc_regs[0]);
+                std::mem::swap(&mut self.regs[14], &mut self.svc_regs[1]);
+            },
+            ABT => {
+                std::mem::swap(&mut self.regs[13], &mut self.abt_regs[0]);
+                std::mem::swap(&mut self.regs[14], &mut self.abt_regs[1]);
+            },
+        }
+    }
 }
 
-impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
+impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
     fn write_reg(&mut self, n: usize, data: u32) {
         if n == PC_REG {
-            // Flush pipeline
-            self.regs[n] = data - self.cpsr.instr_size();
-            self.fetched_instr = None;
-            self.decoded_instr = None;
-            self.next_fetch_non_seq();
+            self.do_branch(data.wrapping_sub(self.cpsr.instr_size()));
         } else {
             self.regs[n] = data;
         }
     }
+    fn do_branch(&mut self, dest: u32) {
+        self.regs[PC_REG] = dest;
+
+        // Flush pipeline
+        self.fetched_instr = None;
+        self.decoded_instr = None;
+        self.next_fetch_non_seq();
+    }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
+        let mode = self.cpsr.mode();
         match n {
-            13..=14 if self.mode == Mode::IRQ => self.irq_regs[n - 13],
-            13..=14 if self.mode == Mode::UND => self.und_regs[n - 13],
-            13..=14 if self.mode == Mode::SVC => self.svc_regs[n - 13],
-            13..=14 if self.mode == Mode::ABT => self.abt_regs[n - 13],
-            8..=14 if self.mode == Mode::FIQ => self.fiq_regs[n - 8],
+            13..=14 if mode == Mode::IRQ => self.irq_regs[n - 13],
+            13..=14 if mode == Mode::UND => self.und_regs[n - 13],
+            13..=14 if mode == Mode::SVC => self.svc_regs[n - 13],
+            13..=14 if mode == Mode::ABT => self.abt_regs[n - 13],
+            8..=14 if mode == Mode::FIQ => self.fiq_regs[n - 8],
             _ => self.regs[n],
         }
     }
     fn write_usr_reg(&mut self, n: usize, data: u32) {
+        let mode = self.cpsr.mode();
         match n {
-            13..=14 if self.mode == Mode::IRQ => self.irq_regs[n - 13] = data,
-            13..=14 if self.mode == Mode::UND => self.und_regs[n - 13] = data,
-            13..=14 if self.mode == Mode::SVC => self.svc_regs[n - 13] = data,
-            13..=14 if self.mode == Mode::ABT => self.abt_regs[n - 13] = data,
-            8..=14 if self.mode == Mode::FIQ => self.fiq_regs[n - 8] = data,
+            13..=14 if mode == Mode::IRQ => self.irq_regs[n - 13] = data,
+            13..=14 if mode == Mode::UND => self.und_regs[n - 13] = data,
+            13..=14 if mode == Mode::SVC => self.svc_regs[n - 13] = data,
+            13..=14 if mode == Mode::ABT => self.abt_regs[n - 13] = data,
+            8..=14 if mode == Mode::FIQ => self.fiq_regs[n - 8] = data,
             _ => self.regs[n] = data,
         }
     }
@@ -158,12 +196,17 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
         self.cpsr
     }
     fn write_cpsr(&mut self, data: CPSR) {
+        self.shadow_registers(self.cpsr);
         self.cpsr = data;
+        self.shadow_registers(self.cpsr);
+    }
+    fn write_flags(&mut self, flags: CPSR) {
+        self.cpsr = flags;
     }
 
     fn read_spsr(&self) -> CPSR {
         use Mode::*;
-        match self.mode {
+        match self.cpsr.mode() {
             USR => CPSR::default(),
             FIQ => self.fiq_spsr,
             IRQ => self.irq_spsr,
@@ -174,7 +217,7 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
     }
     fn write_spsr(&mut self, data: CPSR) {
         use Mode::*;
-        match self.mode {
+        match self.cpsr.mode() {
             USR => return,
             FIQ => self.fiq_spsr = data,
             IRQ => self.irq_spsr = data,
@@ -185,97 +228,77 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
     }
 
     fn trigger_exception(&mut self, exception: Exception) {
+        self.shadow_registers(self.cpsr);
+        
         use Exception::*;
         match exception {
             Reset => {
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0000;
                 self.svc_spsr = self.cpsr;
 
-                self.mode = Mode::SVC;
                 self.cpsr.set_mode(Mode::SVC);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I | CPSR::F);
             },
             DataAbort => {
-                self.abt_regs[0] = self.regs[13];
-                self.abt_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.abt_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0010;
                 self.abt_spsr = self.cpsr;
 
-                self.mode = Mode::ABT;
                 self.cpsr.set_mode(Mode::ABT);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
             FastInterrupt if !self.cpsr.contains(CPSR::F) => {
-                self.fiq_regs[0] = self.regs[8];
-                self.fiq_regs[1] = self.regs[9];
-                self.fiq_regs[2] = self.regs[10];
-                self.fiq_regs[3] = self.regs[11];
-                self.fiq_regs[4] = self.regs[12];
-                self.fiq_regs[5] = self.regs[13];
-                self.fiq_regs[6] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.fiq_regs[6] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_001C;
                 self.fiq_spsr = self.cpsr;
 
-                self.mode = Mode::FIQ;
                 self.cpsr.set_mode(Mode::FIQ);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I | CPSR::F);
             },
             Interrupt if !self.cpsr.contains(CPSR::I) => {
-                self.irq_regs[0] = self.regs[13];
-                self.irq_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.irq_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0018;
                 self.irq_spsr = self.cpsr;
 
-                self.mode = Mode::IRQ;
                 self.cpsr.set_mode(Mode::IRQ);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
             PrefetchAbort => {
-                self.abt_regs[0] = self.regs[13];
-                self.abt_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.abt_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_000C;
                 self.abt_spsr = self.cpsr;
 
-                self.mode = Mode::ABT;
                 self.cpsr.set_mode(Mode::ABT);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
             SoftwareInterrupt => {
-                self.svc_regs[0] = self.regs[13];
-                self.svc_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_0008;
+                self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.regs[PC_REG] = 0x0000_0008 - self.cpsr.instr_size();
                 self.svc_spsr = self.cpsr;
 
-                self.mode = Mode::SVC;
                 self.cpsr.set_mode(Mode::SVC);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
             UndefinedInstruction => {
-                self.und_regs[0] = self.regs[13];
-                self.und_regs[1] = self.regs[14];
-                self.regs[LINK_REG] = self.regs[PC_REG] - self.cpsr.instr_size();
+                self.und_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
                 self.regs[PC_REG] = 0x0000_0004;
                 self.und_spsr = self.cpsr;
 
-                self.mode = Mode::UND;
                 self.cpsr.set_mode(Mode::UND);
                 self.cpsr.remove(CPSR::T);
                 self.cpsr.insert(CPSR::I);
             },
             _ => {},
         }
+
+        self.shadow_registers(self.cpsr);
         // Flush pipeline
         self.fetched_instr = None;
         self.decoded_instr = None;
@@ -283,41 +306,29 @@ impl<M: Mem32> ARMCore<M> for ARM7TDMI<M> {
     }
 
     fn return_from_exception(&mut self) {
+        self.shadow_registers(self.cpsr);
+
         use Mode::*;
-        match self.mode {
+        match self.cpsr.mode() {
             USR => panic!("Attempting to transition from USR to USR"),
             FIQ => {
                 self.cpsr = self.fiq_spsr;
-                self.regs[8] = self.fiq_regs[0];
-                self.regs[9] = self.fiq_regs[1];
-                self.regs[10] = self.fiq_regs[2];
-                self.regs[11] = self.fiq_regs[3];
-                self.regs[12] = self.fiq_regs[4];
-                self.regs[13] = self.fiq_regs[5];
-                self.regs[14] = self.fiq_regs[6];
             },
             IRQ => {
                 self.cpsr = self.irq_spsr;
-                self.regs[13] = self.irq_regs[0];
-                self.regs[14] = self.irq_regs[1];
             },
             UND => {
                 self.cpsr = self.und_spsr;
-                self.regs[13] = self.und_regs[0];
-                self.regs[14] = self.und_regs[1];
             },
             SVC => {
                 self.cpsr = self.svc_spsr;
-                self.regs[13] = self.svc_regs[0];
-                self.regs[14] = self.svc_regs[1];
             },
             ABT => {
                 self.cpsr = self.abt_spsr;
-                self.regs[13] = self.abt_regs[0];
-                self.regs[14] = self.abt_regs[1];
             }
         }
-        self.mode = USR;
+
+        self.shadow_registers(self.cpsr);
     }
 
     fn next_fetch_non_seq(&mut self) {

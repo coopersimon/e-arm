@@ -17,15 +17,22 @@ pub mod constants {
     pub const SP_REG: usize = 13;
     pub const LINK_REG: usize = 14;
     pub const PC_REG: usize = 15;
+
+    /// 32-bit ARM instruction size in bytes.
+    pub const I_SIZE: u32 = 4;
+    /// 16-bit THUMB instruction size in bytes.
+    pub const T_SIZE: u32 = 2;
 }
 
 bitflags! {
     #[derive(Default)]
     pub struct CPSR: u32 {
+        const FLAGS = bits(24, 31);
         const N = bit(31);      // Negative
         const Z = bit(30);      // Zero
         const C = bit(29);      // Carry
         const V = bit(28);      // Overflow
+
         const I = bit(7);       // IRQs disabled
         const F = bit(6);       // FIQs disabled
         const T = bit(5);       // THUMB instruction set enabled
@@ -55,8 +62,21 @@ impl CPSR {
         self.insert(mode.into());
     }
 
+    pub fn mode(self) -> Mode {
+        use Mode::*;
+        match self & CPSR::MODE {
+            CPSR::FIQ => FIQ,
+            CPSR::IRQ => IRQ,
+            CPSR::UND => UND,
+            CPSR::SVC => SVC,
+            CPSR::ABT => ABT,
+            _ => USR,
+        }
+    }
+
     pub fn instr_size(&self) -> u32 {
-        if self.contains(CPSR::T) {2} else {4}
+        use constants::*;
+        if self.contains(CPSR::T) {T_SIZE} else {I_SIZE}
     }
 }
 
@@ -65,6 +85,11 @@ pub type SPSR = CPSR;
 pub trait ARMCore<M: Mem32> {
     fn read_reg(&self, n: usize) -> u32;
     fn write_reg(&mut self, n: usize, data: u32);
+    /// Directly modify the PC.
+    /// 
+    /// Keep in mind the PC will be incremented after the execution completes,
+    /// so the destination must be offset by the branch instruction size.
+    fn do_branch(&mut self, dest: u32);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;
@@ -72,8 +97,13 @@ pub trait ARMCore<M: Mem32> {
     /// Never use for writing PC.
     fn write_usr_reg(&mut self, n: usize, data: u32);
 
+    /// Read from CPSR.
     fn read_cpsr(&self) -> CPSR;
+    /// Write to CPSR.
+    /// This can change the mode.
     fn write_cpsr(&mut self, data: CPSR);
+    /// Write NZCV flags. This will only change the top 8 bits.
+    fn write_flags(&mut self, flags: CPSR);
 
     fn read_spsr(&self) -> CPSR;
     fn write_spsr(&mut self, data: CPSR);

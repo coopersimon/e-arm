@@ -92,7 +92,8 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
             // Load PC-relative
             let rd = ((i >> 8) & 0x7) as usize;
             let offset = ((i & 0xFF) << 2) as u32;
-            let addr = self.read_reg(PC_REG).wrapping_add(offset);
+            let current_pc = self.read_reg(PC_REG) & 0xFFFF_FFFC;
+            let addr = current_pc.wrapping_add(offset);
             self.ldr(false, addr, rd)
         } else if test_bit(i, 10) {
             self.decode_thumb_hi_reg_ops(i)
@@ -290,8 +291,8 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
         } else if self.check_cond(cond) {
             let offset_i = ((i & 0xFF) as u8) as i8;
             let offset = ((offset_i as i32) << 1) as u32;
-            let current_pc = self.read_reg(PC_REG).wrapping_sub(2);
-            self.write_reg(PC_REG, current_pc.wrapping_add(offset));
+            let current_pc = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
+            self.do_branch(current_pc.wrapping_add(offset));
         }
         0
     }
@@ -320,8 +321,8 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
                     offset_imm |= bits(12, 15);
                 }
                 let offset = ((offset_imm as i16) as i32) as u32;
-                let pc = self.read_reg(PC_REG).wrapping_sub(2);
-                self.write_reg(PC_REG, pc.wrapping_add(offset));
+                let current_pc = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
+                self.do_branch(current_pc.wrapping_add(offset));
             },
             0b01 => {self.undefined();},
             0b10 => {   // Long branch
@@ -330,14 +331,14 @@ pub trait Thumbv4<M: Mem32<Addr = u32>>: ARMv4<M> {
                     imm |= bits(11, 15);
                 }
                 let imm32 = ((imm as i16) as i32) as u32;
-                let target_addr = self.read_reg(PC_REG).wrapping_sub(2).wrapping_add(imm32 << 12);
+                let target_addr = self.read_reg(PC_REG).wrapping_add(imm32 << 12);
                 self.write_reg(LINK_REG, target_addr);
             },
             0b11 => {   // BL
                 let imm = ((i & bits(0, 10)) * 2) as u32;
-                let return_addr = self.read_reg(PC_REG).wrapping_sub(2);
-                let dest = self.read_reg(LINK_REG).wrapping_add(imm);
-                self.write_reg(PC_REG, dest);
+                let return_addr = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
+                let dest = self.read_reg(LINK_REG).wrapping_add(imm).wrapping_sub(T_SIZE);
+                self.do_branch(dest);
                 self.write_reg(LINK_REG, return_addr | 1);
             },
             _ => unreachable!()
