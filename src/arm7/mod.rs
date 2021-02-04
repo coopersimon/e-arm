@@ -116,7 +116,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     /// Shadow the registers of the processor.
     /// 
     /// Call this both before and after setting cpsr.
-    fn shadow_registers(&mut self, cpsr: CPSR) {
+    fn shadow_registers(&mut self) {
         use Mode::*;
         match self.cpsr.mode() {
             USR => {},
@@ -196,9 +196,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.cpsr
     }
     fn write_cpsr(&mut self, data: CPSR) {
-        self.shadow_registers(self.cpsr);
+        self.shadow_registers();
         self.cpsr = data;
-        self.shadow_registers(self.cpsr);
+        self.shadow_registers();
     }
     fn write_flags(&mut self, flags: CPSR) {
         self.cpsr = flags;
@@ -228,7 +228,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
 
     fn trigger_exception(&mut self, exception: Exception) {
-        self.shadow_registers(self.cpsr);
+        self.shadow_registers();
         
         use Exception::*;
         match exception {
@@ -298,7 +298,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             _ => {},
         }
 
-        self.shadow_registers(self.cpsr);
+        self.shadow_registers();
         // Flush pipeline
         self.fetched_instr = None;
         self.decoded_instr = None;
@@ -306,7 +306,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
 
     fn return_from_exception(&mut self) {
-        self.shadow_registers(self.cpsr);
+        self.shadow_registers();
 
         use Mode::*;
         match self.cpsr.mode() {
@@ -328,7 +328,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             }
         }
 
-        self.shadow_registers(self.cpsr);
+        self.shadow_registers();
     }
 
     fn next_fetch_non_seq(&mut self) {
@@ -357,6 +357,7 @@ impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
         CPUState {
             regs:   self.regs,
             flags:  self.cpsr.bits(),
+            thumb_mode: self.cpsr.contains(CPSR::T),
 
             pipeline:   [
                 Some(next_instr),
