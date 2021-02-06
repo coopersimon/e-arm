@@ -634,7 +634,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let (data, cycles) = self.ref_mem().load_byte(MemCycleType::N, transfer_addr);
         self.write_reg(dest_reg, data as u32);
 
-        if transfer_params.pre_index || transfer_params.writeback {
+        if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
         }
 
