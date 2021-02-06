@@ -273,18 +273,24 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
     /// Decode push and pop for thumb
     fn decode_push_pop(&mut self, i: u16) -> ARMv4InstructionType {
         let mut reg_list = i & 0xFF;
-        let transfer_params = TransferParams{
-            base_reg: SP_REG,
-            inc: true,
-            pre_index: false,
-            writeback: true,
-        };
         if test_bit(i, 11) {
             // POP
+            let transfer_params = TransferParams{
+                base_reg: SP_REG,
+                inc: true,
+                pre_index: false,
+                writeback: true,
+            };
             reg_list |= (i & bit(8)) << 7;
             ARMv4InstructionType::LDM{transfer_params, reg_list: reg_list as u32, load_from_user: false}
         } else {
             // PUSH
+            let transfer_params = TransferParams{
+                base_reg: SP_REG,
+                inc: false,
+                pre_index: true,
+                writeback: true,
+            };
             reg_list |= (i & bit(8)) << 6;
             ARMv4InstructionType::STM{transfer_params, reg_list: reg_list as u32, load_from_user: false}
         }

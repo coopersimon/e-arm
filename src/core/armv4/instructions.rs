@@ -55,14 +55,18 @@ impl fmt::Display for ARMv4Instruction {
             SWP{rn, rd, rm} => write!(f, "SWP{} R{},R{},[R{}]", self.cond, rd, rm, rn),
             SWPB{rn, rd, rm} => write!(f, "SWPB{} R{},R{},[R{}]", self.cond, rd, rm, rn),
             LDR{transfer_params, data_reg, offset} => write!(f, "LDR{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
-            TLDRPC{data_reg, offset} => write!(f, "LDR R{},[PC, #{:X}]", data_reg, offset),
+            TLDRPC{data_reg, offset} => write!(f, "LDR R{},[PC,#{:X}]", data_reg, offset),
             STR{transfer_params, data_reg, offset} => write!(f, "STR{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
             LDRB{transfer_params, data_reg, offset} => write!(f, "LDRB{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
             STRB{transfer_params, data_reg, offset} => write!(f, "STRB{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
             LDRH{transfer_params, data_reg, offset} => write!(f, "LDRH{} R{},{}", self.cond, data_reg, transfer_params.so(offset)),
             STRH{transfer_params, data_reg, offset} => write!(f, "STRH{} R{},{}", self.cond, data_reg, transfer_params.so(offset)),
-            LDM{transfer_params, reg_list, load_from_user} => write!(f, "LDM{} R{} {{{:016b}}}{}", self.cond, transfer_params.base_reg, reg_list, if *load_from_user {"^"} else {""}),
-            STM{transfer_params, reg_list, load_from_user} => write!(f, "STM{} R{} {{{:016b}}}{}", self.cond, transfer_params.base_reg, reg_list, if *load_from_user {"^"} else {""}),
+            LDM{transfer_params, reg_list, load_from_user} => write!(f,
+                "LDM{} R{}{},{{{:016b}}}{}", self.cond, transfer_params.base_reg, if transfer_params.writeback {"!"} else {""}, reg_list, if *load_from_user {"^"} else {""}
+            ),
+            STM{transfer_params, reg_list, load_from_user} => write!(f,
+                "STM{} R{}{},{{{:016b}}}{}", self.cond, transfer_params.base_reg, if transfer_params.writeback {"!"} else {""}, reg_list, if *load_from_user {"^"} else {""}
+            ),
 
             AND{rd, rn, op2, set_flags} => write!(f, "AND{}{} R{},R{},{}", if *set_flags {"S"} else {""}, self.cond, rd, rn, op2),
             EOR{rd, rn, op2, set_flags} => write!(f, "EOR{}{} R{},R{},{}", if *set_flags {"S"} else {""}, self.cond, rd, rn, op2),
@@ -111,9 +115,9 @@ impl TransferParams {
         };
         if is_offset {
             if self.pre_index {
-                format!("[R{}, {}{}]{}", self.base_reg, if self.inc {""} else {"-"}, offset, if self.writeback {"!"} else {""})
+                format!("[R{},{}{}]{}", self.base_reg, if self.inc {""} else {"-"}, offset, if self.writeback {"!"} else {""})
             } else {
-                format!("[R{}], {}{}", self.base_reg, if self.inc {""} else {"-"}, offset)
+                format!("[R{}],{}{}", self.base_reg, if self.inc {""} else {"-"}, offset)
             }
         } else {
             format!("[R{}]", self.base_reg)
@@ -127,9 +131,9 @@ impl TransferParams {
         };
         if is_offset {
             if self.pre_index {
-                format!("[R{}, {}{}]{}", self.base_reg, if self.inc {""} else {"-"}, offset, if self.writeback {"!"} else {""})
+                format!("[R{},{}{}]{}", self.base_reg, if self.inc {""} else {"-"}, offset, if self.writeback {"!"} else {""})
             } else {
-                format!("[R{}], {}{}", self.base_reg, if self.inc {""} else {"-"}, offset)
+                format!("[R{}],{}{}", self.base_reg, if self.inc {""} else {"-"}, offset)
             }
         } else {
             format!("[R{}]", self.base_reg)
@@ -139,9 +143,9 @@ impl TransferParams {
     fn si(&self, offset: &u32) -> String {
         if *offset != 0 {
             if self.pre_index {
-                format!("[R{}, {}{}]{}", self.base_reg, if self.inc {""} else {"-"}, *offset, if self.writeback {"!"} else {""})
+                format!("[R{},{}{}]{}", self.base_reg, if self.inc {""} else {"-"}, *offset, if self.writeback {"!"} else {""})
             } else {
-                format!("[R{}], {}{}", self.base_reg, if self.inc {""} else {"-"}, *offset)
+                format!("[R{}],{}{}", self.base_reg, if self.inc {""} else {"-"}, *offset)
             }
         } else {
             format!("[R{}]", self.base_reg)

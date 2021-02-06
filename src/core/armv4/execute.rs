@@ -789,11 +789,11 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
 
         // Address to start transferring, and address to write back into register.
         // The lowest address is always the start address.
-        let (mut transfer_addr, writeback_addr) = if !transfer_params.inc {
+        let (mut transfer_addr, writeback_addr) = if transfer_params.inc {
+            (base_addr, base_addr.wrapping_add(offset))
+        } else {
             let low_addr = base_addr.wrapping_sub(offset);
             (low_addr, low_addr)
-        } else {
-            (base_addr, base_addr.wrapping_add(offset))
         };
 
         let mut access_type = MemCycleType::N;
@@ -848,11 +848,11 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         
         // Address to start transferring, and address to write back into register.
         // The lowest address is always the start address.
-        let (mut transfer_addr, writeback_addr) = if !transfer_params.inc {
+        let (mut transfer_addr, writeback_addr) = if transfer_params.inc {
+            (base_addr, base_addr.wrapping_add(offset))
+        } else {
             let low_addr = base_addr.wrapping_sub(offset);
             (low_addr, low_addr)
-        } else {
-            (base_addr, base_addr.wrapping_add(offset))
         };
 
         let mut access_type = MemCycleType::N;
