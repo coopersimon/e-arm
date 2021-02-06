@@ -1,17 +1,17 @@
 /// Core traits and types for ARM processors (data access).
 
 mod armv4;
-mod armv4_test;
-mod armv4thumb;
-mod utils;
 
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
 use crate::coproc::Coprocessor;
 use crate::memory::Mem32;
 
-pub use armv4::ARMv4;
-pub use armv4thumb::Thumbv4;
+pub use armv4::decode::ARMv4Decode;
+pub use armv4::decodethumb::Thumbv4Decode;
+pub use armv4::instructions::{
+    ARMv4, ARMv4Instruction
+};
 
 pub mod constants {
     pub const SP_REG: usize = 13;
@@ -117,6 +117,66 @@ pub trait ARMCore<M: Mem32> {
 
     fn ref_mem<'a>(&'a mut self) -> &'a mut M;
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
+}
+
+/// ARM condition codes.
+pub enum ARMCondition {
+    EQ, // Z set
+    NE, // Z clear
+    CS, // C set
+    CC, // C clear
+    MI, // N set
+    PL, // N clear
+    VS, // V set
+    VC, // V clear
+    HI, // C set and Z clear
+    LS, // C clear or Z set
+    GE, // N xnor V
+    LT, // N xor V
+    GT, // Z clear and (N xnor V)
+    LE, // Z set or (N xor V)
+    AL, // Always
+}
+
+impl ARMCondition {
+    fn eval<M: Mem32<Addr = u32>, A: ARMCore<M>>(self, core: &mut A) -> bool {
+        use ARMCondition::*;
+        match self {
+            EQ => core.read_cpsr().contains(CPSR::Z),
+            NE => !core.read_cpsr().contains(CPSR::Z),
+            CS => core.read_cpsr().contains(CPSR::C),
+            CC => !core.read_cpsr().contains(CPSR::C),
+            MI => core.read_cpsr().contains(CPSR::N),
+            PL => !core.read_cpsr().contains(CPSR::N),
+            VS => core.read_cpsr().contains(CPSR::V),
+            VC => !core.read_cpsr().contains(CPSR::V),
+            HI => {
+                let cpsr = core.read_cpsr();
+                cpsr.contains(CPSR::C) && !cpsr.contains(CPSR::Z)
+            },
+            LS => {
+                let cpsr = core.read_cpsr();
+                !cpsr.contains(CPSR::C) || cpsr.contains(CPSR::Z)
+            },
+            GE => {
+                let cpsr = core.read_cpsr();
+                cpsr.contains(CPSR::N) == cpsr.contains(CPSR::V)
+            },
+            LT => {
+                let cpsr = core.read_cpsr();
+                cpsr.contains(CPSR::N) != cpsr.contains(CPSR::V)
+            },
+            GT => {
+                let cpsr = core.read_cpsr();
+                !cpsr.contains(CPSR::Z) && (cpsr.contains(CPSR::N) == cpsr.contains(CPSR::V))
+            },
+            LE => {
+                let cpsr = core.read_cpsr();
+                cpsr.contains(CPSR::Z) || (cpsr.contains(CPSR::N) != cpsr.contains(CPSR::V))
+            },
+            AL => true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

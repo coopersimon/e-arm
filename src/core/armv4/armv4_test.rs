@@ -146,6 +146,7 @@ impl ARMCore<TestMem> for TestARM4Core {
     }
 }
 
+impl ARMv4Decode<TestMem> for TestARM4Core {}
 impl ARMv4<TestMem> for TestARM4Core {}
 
 // Use to setup in state
@@ -166,7 +167,8 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        let cycles = cpu.execute_instruction(self.instr);
+        let instr = cpu.decode_instruction(self.instr);
+        let cycles = instr.execute(&mut cpu);
 
         for (i, val) in out.regs.iter().enumerate() {
             if let Some(assert_reg) = val {
@@ -351,7 +353,7 @@ fn test_orr() {
             }
         ),
         (
-            // ORRS R1, R0, R1 >> #0: Cond=AL, I=0, Instr=0, S=1, Rn=0, Rd=1, Sh=(Imm=0, LSR), Rm=1, 
+            // ORRS R1, R0, R1 >> #32: Cond=AL, I=0, Instr=0, S=1, Rn=0, Rd=1, Sh=(Imm=0, ASR), Rm=1, 
             TestIn {
                 regs: vec![0x95959595, 0x81810000],
                 cpsr: Some(CPSR::C),

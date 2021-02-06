@@ -1,4 +1,9 @@
-/// Additional utils specific to ARM.
+/// ARMv4 Instruction Set
+
+mod armv4_test;
+pub mod decode;
+pub mod decodethumb;
+pub mod instructions;
 
 use crate::common::u32::test_bit;
 
@@ -8,7 +13,7 @@ use crate::common::u32::test_bit;
 /// Bit 18: status. Bits 16-23
 /// Bit 17: extension. Bits 8-15
 /// Bit 16: control. Bits 0-7
-pub const fn fsxc_mask(from: u32) -> u32 {
+const fn fsxc_mask(from: u32) -> u32 {
     let mut mask = 0;
     if test_bit(from, 19) {
         mask |= 0xFF00_0000;
@@ -30,7 +35,7 @@ pub const fn fsxc_mask(from: u32) -> u32 {
 /// Assume a full multiply takes 4 cycles.
 /// If the most significant byte is all 0 or all 1, it can be reduced by 1 cycle.
 /// Continue for the 2nd and 3rd most significant bytes.
-pub const fn mul_cycles(op2: u32) -> usize {
+const fn mul_cycles(op2: u32) -> usize {
     let leading_zeros = op2.leading_zeros();
     if leading_zeros == 0 {
         let leading_ones = op2.leading_ones();
