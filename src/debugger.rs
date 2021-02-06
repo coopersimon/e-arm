@@ -5,7 +5,7 @@ pub struct CPUState {
     pub flags: u32,
     pub thumb_mode: bool,
 
-    pub pipeline: [Option<u32>; 3],
+    pub pipeline: [Option<crate::ARMv4Instruction>; 3],
 }
 
 pub trait Debugger {

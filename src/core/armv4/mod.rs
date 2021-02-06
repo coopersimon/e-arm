@@ -1,9 +1,10 @@
 /// ARMv4 Instruction Set
 
 mod armv4_test;
+pub mod instructions;
 pub mod decode;
 pub mod decodethumb;
-pub mod instructions;
+pub mod execute;
 
 use crate::common::u32::test_bit;
 

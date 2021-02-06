@@ -2,16 +2,16 @@
 
 mod armv4;
 
+use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
 use crate::coproc::Coprocessor;
 use crate::memory::Mem32;
 
+pub use armv4::instructions::ARMv4Instruction;
 pub use armv4::decode::ARMv4Decode;
 pub use armv4::decodethumb::Thumbv4Decode;
-pub use armv4::instructions::{
-    ARMv4, ARMv4Instruction
-};
+pub use armv4::execute::ARMv4;
 
 pub mod constants {
     pub const SP_REG: usize = 13;
@@ -136,6 +136,29 @@ pub enum ARMCondition {
     GT, // Z clear and (N xnor V)
     LE, // Z set or (N xor V)
     AL, // Always
+}
+
+impl fmt::Display for ARMCondition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use ARMCondition::*;
+        match self {
+            EQ => write!(f, "EQ"),
+            NE => write!(f, "NE"),
+            CS => write!(f, "CS"),
+            CC => write!(f, "CC"),
+            MI => write!(f, "MI"),
+            PL => write!(f, "PL"),
+            VS => write!(f, "VS"),
+            VC => write!(f, "VC"),
+            HI => write!(f, "HI"),
+            LS => write!(f, "LS"),
+            GE => write!(f, "GE"),
+            LT => write!(f, "LT"),
+            GT => write!(f, "GT"),
+            LE => write!(f, "LE"),
+            AL => write!(f, ""),
+        }
+    }
 }
 
 impl ARMCondition {

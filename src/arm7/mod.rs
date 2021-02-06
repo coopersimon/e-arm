@@ -358,16 +358,22 @@ impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
         } else {
             self.mem.load_word(MemCycleType::N, self.regs[PC_REG]).0
         };
+        let thumb_mode = self.cpsr.contains(CPSR::T);
+        let pipeline = if thumb_mode {[
+            Some(self.decode_thumb(next_instr as u16)),
+            self.fetched_instr.map(|i| self.decode_thumb(i as u16)),
+            self.decoded_instr.map(|i| self.decode_thumb(i as u16))
+        ]} else {[
+            Some(self.decode_instruction(next_instr)),
+            self.fetched_instr.map(|i| self.decode_instruction(i)),
+            self.decoded_instr.map(|i| self.decode_instruction(i))
+        ]};
         CPUState {
             regs:   self.regs,
             flags:  self.cpsr.bits(),
-            thumb_mode: self.cpsr.contains(CPSR::T),
+            thumb_mode: thumb_mode,
 
-            pipeline:   [
-                Some(next_instr),
-                self.fetched_instr,
-                self.decoded_instr,
-            ]
+            pipeline: pipeline,
         }
     }
 }
