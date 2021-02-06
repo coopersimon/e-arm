@@ -55,6 +55,7 @@ impl fmt::Display for ARMv4Instruction {
             SWP{rn, rd, rm} => write!(f, "SWP{} R{},R{},[R{}]", self.cond, rd, rm, rn),
             SWPB{rn, rd, rm} => write!(f, "SWPB{} R{},R{},[R{}]", self.cond, rd, rm, rn),
             LDR{transfer_params, data_reg, offset} => write!(f, "LDR{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
+            TLDRPC{data_reg, offset} => write!(f, "LDR R{},[PC, #{:X}]", data_reg, offset),
             STR{transfer_params, data_reg, offset} => write!(f, "STR{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
             LDRB{transfer_params, data_reg, offset} => write!(f, "LDRB{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
             STRB{transfer_params, data_reg, offset} => write!(f, "STRB{} R{},{}", self.cond, data_reg, transfer_params.ss(offset)),
@@ -87,8 +88,8 @@ impl fmt::Display for ARMv4Instruction {
             SMULL{set_flags, rd_hi, rd_lo, rs, rm} => write!(f, "SMULL{}{} R{},R{},R{},R{}", if *set_flags {"S"} else {""}, self.cond, rd_lo, rd_hi, rm, rs),
             SMLAL{set_flags, rd_hi, rd_lo, rs, rm} => write!(f, "SMLAL{}{} R{},R{},R{},R{}", if *set_flags {"S"} else {""}, self.cond, rd_lo, rd_hi, rm, rs),
 
-            MSR{spsr, mask, data} => write!(f, "MSR {} {},{}", if *spsr {"SPSR"} else {"CPSR"}, mask, data),
-            MRS{spsr, rd} => write!(f, "MRS R{},{}", rd, if *spsr {"SPSR"} else {"CPSR"}),
+            MSR{spsr, mask, data} => write!(f, "MSR{} {} {:X},{}", self.cond, if *spsr {"SPSR"} else {"CPSR"}, mask, data),
+            MRS{spsr, rd} => write!(f, "MRS{} R{},{}", self.cond, rd, if *spsr {"SPSR"} else {"CPSR"}),
         }
     }
 }
@@ -258,6 +259,8 @@ pub enum ARMv4InstructionType {
     SWP{rn: usize, rd: usize, rm: usize},
     SWPB{rn: usize, rd: usize, rm: usize},
     LDR{transfer_params: TransferParams, data_reg: usize, offset: ShiftOperand},
+    /// Thumb PC-relative load
+    TLDRPC{data_reg: usize, offset: u32},
     STR{transfer_params: TransferParams, data_reg: usize, offset: ShiftOperand},
     LDRB{transfer_params: TransferParams, data_reg: usize, offset: ShiftOperand},
     STRB{transfer_params: TransferParams, data_reg: usize, offset: ShiftOperand},
@@ -322,6 +325,7 @@ impl ARMv4InstructionType {
             SWP{rn, rd, rm} => core.swp(rn, rd, rm),
             SWPB{rn, rd, rm} => core.swpb(rn, rd, rm),
             LDR{transfer_params, data_reg, offset} => core.ldr(transfer_params, data_reg, offset),
+            TLDRPC{data_reg, offset} => core.tldrpc(data_reg, offset),
             STR{transfer_params, data_reg, offset} => core.str(transfer_params, data_reg, offset),
             LDRB{transfer_params, data_reg, offset} => core.ldrb(transfer_params, data_reg, offset),
             STRB{transfer_params, data_reg, offset} => core.strb(transfer_params, data_reg, offset),

@@ -615,6 +615,15 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         cycles + 1
     }
 
+    /// Thumb LDR PC-relative
+    fn tldrpc(&mut self, dest_reg: usize, offset: u32) -> usize {
+        let base_addr = self.read_reg(PC_REG) & 0xFFFF_FFFC;
+        let transfer_addr = base_addr.wrapping_add(offset);
+        let (data, cycles) = self.ref_mem().load_word(MemCycleType::N, transfer_addr);
+        self.write_reg(dest_reg, data);
+        cycles + 1
+    }
+
     /// LDRB
     /// Load a single byte from memory and store it in a register.
     fn ldrb(&mut self, transfer_params: TransferParams, dest_reg: usize, offset: ShiftOperand) -> usize {

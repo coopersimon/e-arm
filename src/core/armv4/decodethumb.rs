@@ -97,13 +97,7 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
             // Load PC-relative
             let rd = ((i >> 8) & 0x7) as usize;
             let offset = ((i & 0xFF) << 2) as u32;
-            let transfer_params = TransferParams{
-                base_reg: PC_REG,
-                inc: true,
-                pre_index: true,
-                writeback: false,
-            };
-            ARMv4InstructionType::LDR{transfer_params, data_reg: rd, offset: ShiftOperand::Immediate(offset)}
+            ARMv4InstructionType::TLDRPC{data_reg: rd, offset}
         } else if test_bit(i, 10) {
             self.decode_thumb_hi_reg_ops(i)
         } else {
@@ -218,6 +212,20 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
     /// Decode transfer of halfwords and stack-relative transfers
     fn decode_thumb_transfer_ext(&mut self, i: u16) -> ARMv4InstructionType {
         if test_bit(i, 12) {
+            let rd = ((i >> 8) & 0x7) as usize;
+            let offset = ((i & 0xFF) << 2) as u32;
+            let transfer_params = TransferParams{
+                base_reg: SP_REG,
+                inc: true,
+                pre_index: true,
+                writeback: false,
+            };
+            if test_bit(i, 11) {
+                ARMv4InstructionType::LDR{transfer_params, data_reg: rd, offset: ShiftOperand::Immediate(offset)}
+            } else {
+                ARMv4InstructionType::STR{transfer_params, data_reg: rd, offset: ShiftOperand::Immediate(offset)}
+            }
+        } else {
             let offset = ((i >> 5) & 0x3E) as u32;
             let rb = ((i >> 3) & 0x7) as usize;
             let rd = (i & 0x7) as usize;
@@ -231,20 +239,6 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
                 ARMv4InstructionType::LDRH{transfer_params, data_reg: rd, offset: OpData::Immediate(offset)}
             } else {
                 ARMv4InstructionType::STRH{transfer_params, data_reg: rd, offset: OpData::Immediate(offset)}
-            }
-        } else {
-            let rd = ((i >> 8) & 0x7) as usize;
-            let offset = ((i & 0xFF) << 2) as u32;
-            let transfer_params = TransferParams{
-                base_reg: SP_REG,
-                inc: true,
-                pre_index: true,
-                writeback: false,
-            };
-            if test_bit(i, 11) {
-                ARMv4InstructionType::LDR{transfer_params, data_reg: rd, offset: ShiftOperand::Immediate(offset)}
-            } else {
-                ARMv4InstructionType::STR{transfer_params, data_reg: rd, offset: ShiftOperand::Immediate(offset)}
             }
         }
     }
