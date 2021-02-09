@@ -51,14 +51,14 @@ pub mod u64 {
     }
 
     /// Set all bits between the top and bottom (inclusive).
-    pub const fn bits(mut bottom: usize, top: usize) -> u64 {
+    /*pub const fn bits(mut bottom: usize, top: usize) -> u64 {
         let mut out = 0;
         while bottom <= top {
             out |= bit(bottom);
             bottom += 1;
         }
         return out;
-    }
+    }*/
 
     /// Check if the nth bit is set.
     pub const fn test_bit(val: u64, n: usize) -> bool {

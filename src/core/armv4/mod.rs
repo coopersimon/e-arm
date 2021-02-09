@@ -1,5 +1,6 @@
 /// ARMv4 Instruction Set
 
+#[allow(dead_code)]
 mod armv4_test;
 pub mod instructions;
 pub mod decode;
