@@ -160,21 +160,21 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
             0x0 => ARMv4InstructionType::AND{rd, rn: rd, op2, set_flags: true},
             0x1 => ARMv4InstructionType::EOR{rd, rn: rd, op2, set_flags: true},
             0x2 => {
-                let op2 = ALUOperand::RegShift(RegShiftOperand::LSL{shift_reg: rs, reg: rd});
+                let op2 = ALUOperand::RegShift{op: RegShiftOperand::LSL, shift_reg: rs, reg: rd};
                 ARMv4InstructionType::MOV{rd, op2, set_flags: true}
             },
             0x3 => {
-                let op2 = ALUOperand::RegShift(RegShiftOperand::LSR{shift_reg: rs, reg: rd});
+                let op2 = ALUOperand::RegShift{op: RegShiftOperand::LSR, shift_reg: rs, reg: rd};
                 ARMv4InstructionType::MOV{rd, op2, set_flags: true}
             },
             0x4 => {
-                let op2 = ALUOperand::RegShift(RegShiftOperand::ASR{shift_reg: rs, reg: rd});
+                let op2 = ALUOperand::RegShift{op: RegShiftOperand::ASR, shift_reg: rs, reg: rd};
                 ARMv4InstructionType::MOV{rd, op2, set_flags: true}
             },
             0x5 => ARMv4InstructionType::ADC{rd, rn: rd, op2, set_flags: true},
             0x6 => ARMv4InstructionType::SBC{rd, rn: rd, op2, set_flags: true},
             0x7 => {
-                let op2 = ALUOperand::RegShift(RegShiftOperand::ROR{shift_reg: rs, reg: rd});
+                let op2 = ALUOperand::RegShift{op: RegShiftOperand::ROR, shift_reg: rs, reg: rd};
                 ARMv4InstructionType::MOV{rd, op2, set_flags: true}
             },
             0x8 => ARMv4InstructionType::TST{rn: rd, op2},

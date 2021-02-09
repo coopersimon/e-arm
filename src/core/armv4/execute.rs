@@ -26,8 +26,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Called when an undefined instruction is encountered.
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
-        self.trigger_exception(crate::Exception::UndefinedInstruction);
-        0
+        panic!("undefined");
+        //self.trigger_exception(crate::Exception::UndefinedInstruction);
+        //0
     }
 
     // Shifts
@@ -126,7 +127,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// AND
     /// Bitwise AND
     fn and(&mut self, s: bool, rd: usize, rn: usize, op2: ALUOperand) -> usize {
-        let (op2, cycles) = self.eval_alu_op(op2, true);
+        let (op2, cycles) = self.eval_alu_op(op2, s);
         let op1 = self.read_reg(rn);
         let result = op1 & op2;
         self.writeback(s, rd, result);
@@ -136,7 +137,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// EOR
     /// Bitwise exclusive OR (xor)
     fn eor(&mut self, s: bool, rd: usize, rn: usize, op2: ALUOperand) -> usize {
-        let (op2, cycles) = self.eval_alu_op(op2, true);
+        let (op2, cycles) = self.eval_alu_op(op2, s);
         let op1 = self.read_reg(rn);
         let result = op1 ^ op2;
         self.writeback(s, rd, result);
@@ -146,7 +147,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// ORR
     /// Bitwise inclusive OR
     fn orr(&mut self, s: bool, rd: usize, rn: usize, op2: ALUOperand) -> usize {
-        let (op2, cycles) = self.eval_alu_op(op2, true);
+        let (op2, cycles) = self.eval_alu_op(op2, s);
         let op1 = self.read_reg(rn);
         let result = op1 | op2;
         self.writeback(s, rd, result);
@@ -156,7 +157,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// BIC
     /// NOT op2 with AND
     fn bic(&mut self, s: bool, rd: usize, rn: usize, op2: ALUOperand) -> usize {
-        let (op2, cycles) = self.eval_alu_op(op2, true);
+        let (op2, cycles) = self.eval_alu_op(op2, s);
         let op1 = self.read_reg(rn);
         let result = op1 & !op2;
         self.writeback(s, rd, result);
@@ -166,7 +167,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// MOV
     /// Move op2 into rd.
     fn mov(&mut self, s: bool, rd: usize, op2: ALUOperand) -> usize {
-        let (data, cycles) = self.eval_alu_op(op2, true);
+        let (data, cycles) = self.eval_alu_op(op2, s);
         self.writeback(s, rd, data);
         cycles
     }
@@ -174,7 +175,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// MVN
     /// Move NOT op2 into rd.
     fn mvn(&mut self, s: bool, rd: usize, op2: ALUOperand) -> usize {
-        let (data, cycles) = self.eval_alu_op(op2, true);
+        let (data, cycles) = self.eval_alu_op(op2, s);
         self.writeback(s, rd, !data);
         cycles
     }
@@ -195,11 +196,11 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     }
 
     /// TEQ
-    /// Bitwise OR and set flags.
+    /// Bitwise XOR and set flags.
     fn teq(&mut self, rn: usize, op2: ALUOperand) -> usize {
         let (op2, cycles) = self.eval_alu_op(op2, true);
         let op1 = self.read_reg(rn);
-        let result = op1 | op2;
+        let result = op1 ^ op2;
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::N, test_bit(result, 31));
         cpsr.set(CPSR::Z, result == 0);
@@ -802,7 +803,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 transfer_addr += 4;
                 let (data, cycles) = self.ref_mem().load_word(access_type, transfer_addr);
                 access_type = MemCycleType::S;
-                if load_from_user {
+                if reg == PC_REG {
+                    self.write_reg(reg, data & 0xFFFF_FFFE);
+                } else if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
                     self.write_reg(reg, data);
@@ -813,7 +816,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             (0..16).filter(|reg| test_bit(reg_list, *reg)).fold(0, |acc, reg| {
                 let (data, cycles) = self.ref_mem().load_word(access_type, transfer_addr);
                 access_type = MemCycleType::S;
-                if load_from_user {
+                if reg == PC_REG {
+                    self.write_reg(reg, data & 0xFFFF_FFFE);
+                } else if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
                     self.write_reg(reg, data);
@@ -1002,12 +1007,29 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         use RegShiftOperand::*;
         match op {
             Normal(n) => (self.eval_shift_op(n, set_carry), 0),
-            RegShift(r) => (match r {
-                LSL{shift_reg, reg} => self.lsl(set_carry, self.read_reg(reg), self.read_reg(shift_reg) & 0xFF),
-                LSR{shift_reg, reg} => self.lsr(set_carry, self.read_reg(reg), self.read_reg(shift_reg) & 0xFF),
-                ASR{shift_reg, reg} => self.asr(set_carry, self.read_reg(reg), self.read_reg(shift_reg) & 0xFF),
-                ROR{shift_reg, reg} => self.ror(self.read_reg(reg), self.read_reg(shift_reg) & 0xFF),
-            }, 1)
+            RegShift{op, shift_reg, reg} => {
+                let shift = self.read_reg(reg);
+                let shift_amount = self.read_reg(shift_reg) & 0xFF;
+                let set_carry = set_carry && (shift_amount != 0);
+                (match op {
+                    LSL => if shift_amount <= 32 {
+                        self.lsl(set_carry, shift, shift_amount)
+                    } else {
+                        0
+                    },
+                    LSR => if shift_amount < 32 {
+                        self.lsr(set_carry, shift, shift_amount)
+                    } else {
+                        self.lsr_32(set_carry, shift)
+                    },
+                    ASR => if shift_amount < 32 {
+                        self.asr(set_carry, shift, shift_amount)
+                    } else {
+                        self.asr_32(set_carry, shift)
+                    },
+                    ROR => self.ror(shift, shift_amount),
+                }, 1)
+            }
         }
     }
 

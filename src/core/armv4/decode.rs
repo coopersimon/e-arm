@@ -330,10 +330,10 @@ pub trait ARMv4Decode<M: Mem32<Addr = u32>>: ARMCore<M> {
         if test_bit(i, 4) {
             let shift_reg = ((i >> 8) & 0xF) as usize;
             match shift_type {
-                0 => ALUOperand::RegShift(RegShiftOperand::LSL{shift_reg, reg}),
-                1 => ALUOperand::RegShift(RegShiftOperand::LSR{shift_reg, reg}),
-                2 => ALUOperand::RegShift(RegShiftOperand::ASR{shift_reg, reg}),
-                3 => ALUOperand::RegShift(RegShiftOperand::ROR{shift_reg, reg}),
+                0 => ALUOperand::RegShift{op: RegShiftOperand::LSL, shift_reg, reg},
+                1 => ALUOperand::RegShift{op: RegShiftOperand::LSR, shift_reg, reg},
+                2 => ALUOperand::RegShift{op: RegShiftOperand::ASR, shift_reg, reg},
+                3 => ALUOperand::RegShift{op: RegShiftOperand::ROR, shift_reg, reg},
                 _ => unreachable!()
             }
         } else {

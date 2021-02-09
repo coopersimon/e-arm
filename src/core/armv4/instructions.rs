@@ -32,6 +32,33 @@ impl ARMv4Instruction {
     }
 }
 
+fn reg_list_to_str(reg_list: u32) -> String {
+    use crate::common::u32;
+    let mut out = String::new();
+    let mut prev_reg: Option<usize> = None;
+    let mut consecutive = false;
+    for reg in 0..16 {
+        if u32::test_bit(reg_list, reg) {
+            if let Some(prev) = prev_reg {
+                if (prev + 1) != reg {
+                    if consecutive {
+                        out.push_str(&format!("-{}", prev));
+                    }
+                    out.push_str(&format!(",R{}", reg));
+                    consecutive = false;
+                } else {
+                    consecutive = true;
+                }
+            } else {
+                out.push_str(&format!("R{}", reg));
+            }
+
+            prev_reg = Some(reg);
+        }
+    }
+    out
+}
+
 impl fmt::Display for ARMv4Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ARMv4InstructionType::*;
@@ -62,10 +89,10 @@ impl fmt::Display for ARMv4Instruction {
             LDRH{transfer_params, data_reg, offset} => write!(f, "LDRH{} R{},{}", self.cond, data_reg, transfer_params.so(offset)),
             STRH{transfer_params, data_reg, offset} => write!(f, "STRH{} R{},{}", self.cond, data_reg, transfer_params.so(offset)),
             LDM{transfer_params, reg_list, load_from_user} => write!(f,
-                "LDM{} R{}{},{{{:016b}}}{}", self.cond, transfer_params.base_reg, if transfer_params.writeback {"!"} else {""}, reg_list, if *load_from_user {"^"} else {""}
+                "LDM{} R{}{},{{{}}}{}", self.cond, transfer_params.base_reg, if transfer_params.writeback {"!"} else {""}, reg_list_to_str(*reg_list), if *load_from_user {"^"} else {""}
             ),
             STM{transfer_params, reg_list, load_from_user} => write!(f,
-                "STM{} R{}{},{{{:016b}}}{}", self.cond, transfer_params.base_reg, if transfer_params.writeback {"!"} else {""}, reg_list, if *load_from_user {"^"} else {""}
+                "STM{} R{}{},{{{}}}{}", self.cond, transfer_params.base_reg, if transfer_params.writeback {"!"} else {""}, reg_list_to_str(*reg_list), if *load_from_user {"^"} else {""}
             ),
 
             AND{rd, rn, op2, set_flags} => write!(f, "AND{}{} R{},R{},{}", if *set_flags {"S"} else {""}, self.cond, rd, rn, op2),
@@ -156,7 +183,12 @@ impl TransferParams {
 /// ALU 2nd operand types.
 pub enum ALUOperand {
     Normal(ShiftOperand),
-    RegShift(RegShiftOperand)
+    /// Shift "reg" by the value in "shift_reg".
+    RegShift{
+        op: RegShiftOperand,
+        shift_reg: usize,
+        reg: usize
+    }
 }
 
 impl fmt::Display for ALUOperand {
@@ -164,7 +196,7 @@ impl fmt::Display for ALUOperand {
         use ALUOperand::*;
         match self {
             Normal(op) => write!(f, "{}", op),
-            RegShift(op) => write!(f, "{}", op),
+            RegShift{op, shift_reg, reg} => write!(f, "R{},{} R{}", reg, op, shift_reg),
         }
     }
 }
@@ -172,22 +204,21 @@ impl fmt::Display for ALUOperand {
 /// ALU 2nd operand types with a shift by register value.
 /// 
 /// These all take an extra cycle.
-/// Shift "reg" by the value in "shift_reg".
 pub enum RegShiftOperand {
-    LSL{shift_reg: usize, reg: usize},
-    LSR{shift_reg: usize, reg: usize},
-    ASR{shift_reg: usize, reg: usize},
-    ROR{shift_reg: usize, reg: usize},
+    LSL,
+    LSR,
+    ASR,
+    ROR,
 }
 
 impl fmt::Display for RegShiftOperand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use RegShiftOperand::*;
         match self {
-            LSL{shift_reg, reg} => write!(f, "R{}, LSL R{}", reg, shift_reg),
-            LSR{shift_reg, reg} => write!(f, "R{}, LSR R{}", reg, shift_reg),
-            ASR{shift_reg, reg} => write!(f, "R{}, ASR R{}", reg, shift_reg),
-            ROR{shift_reg, reg} => write!(f, "R{}, ROR R{}", reg, shift_reg),
+            LSL => write!(f, "LSL"),
+            LSR => write!(f, "LSR"),
+            ASR => write!(f, "ASR"),
+            ROR => write!(f, "ROR"),
         }
     }
 }
