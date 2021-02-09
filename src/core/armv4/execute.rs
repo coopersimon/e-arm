@@ -743,6 +743,62 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         cycles + 1
     }
 
+    /// LDRSB
+    /// Load byte from memory, and sign-extend.
+    fn ldrsb(&mut self, transfer_params: TransferParams, dest_reg: usize, offset: OpData) -> usize {
+        let offset = self.eval_op_data(offset);
+        let base_addr = self.read_reg(transfer_params.base_reg);
+        let offset_addr = if transfer_params.inc {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let transfer_addr = if transfer_params.pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        let (data, cycles) = self.ref_mem().load_byte(MemCycleType::N, transfer_addr);
+        let signed_data = (data as i8) as i32;
+        self.write_reg(dest_reg, signed_data as u32);
+
+        if !transfer_params.pre_index || transfer_params.writeback {
+            self.write_reg(transfer_params.base_reg, offset_addr);
+        }
+
+        // Loads take one extra internal cycle.
+        cycles + 1
+    }
+
+    /// LDRSH
+    /// Load halfword from memory, and sign-extend.
+    fn ldrsh(&mut self, transfer_params: TransferParams, dest_reg: usize, offset: OpData) -> usize {
+        let offset = self.eval_op_data(offset);
+        let base_addr = self.read_reg(transfer_params.base_reg);
+        let offset_addr = if transfer_params.inc {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let transfer_addr = if transfer_params.pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        let (data, cycles) = self.ref_mem().load_halfword(MemCycleType::N, transfer_addr);
+        let signed_data = (data as i16) as i32;
+        self.write_reg(dest_reg, signed_data as u32);
+
+        if !transfer_params.pre_index || transfer_params.writeback {
+            self.write_reg(transfer_params.base_reg, offset_addr);
+        }
+
+        // Loads take one extra internal cycle.
+        cycles + 1
+    }
+
     /// STRH
     /// Store 2 bytes into memory.
     fn strh(&mut self, transfer_params: TransferParams, src_reg: usize, offset: OpData) -> usize {

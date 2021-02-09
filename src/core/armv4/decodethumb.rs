@@ -121,9 +121,9 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
             let offset = OpData::Register(ro);
             match (i & bits(10, 11)) >> 10 {
                 0b00 => ARMv4InstructionType::STRH{transfer_params, data_reg: rd, offset},
-                0b01 => ARMv4InstructionType::UND, // LDSB
+                0b01 => ARMv4InstructionType::LDRSB{transfer_params, data_reg: rd, offset},
                 0b10 => ARMv4InstructionType::LDRH{transfer_params, data_reg: rd, offset},
-                0b11 => ARMv4InstructionType::UND, // LDSH
+                0b11 => ARMv4InstructionType::LDRSH{transfer_params, data_reg: rd, offset},
                 _ => unreachable!()
             }
         } else {

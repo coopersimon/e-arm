@@ -194,26 +194,33 @@ pub trait ARMv4Decode<M: Mem32<Addr = u32>>: ARMCore<M> {
 
     /// Decode extended transfers, SWP and multiplication.
     /// All of these instructions have bit25 = 0 and bits7 and 4 = 1.
-    /// The exact instruction depends on the value of bits 6 and 5.
+    /// The exact instruction depends on the value of bits 24, 6 and 5.
     fn decode_other(&mut self, i: u32) -> ARMv4InstructionType {
-        const HALFWORD: u32 = 0b01 << 5;
-        const OTHER: u32 = 0b00 << 5;
-        match i & bits(5, 6) {
-            HALFWORD => self.decode_transfer_halfword(i),
-            OTHER if test_bit(i, 24) => if !test_bit(i, 20) {
-                let rn = ((i >> 16) & 0xF) as usize;
-                let rd = ((i >> 12) & 0xF) as usize;
-                let rm = (i & 0xF) as usize;
-                if test_bit(i, 22) {
-                    ARMv4InstructionType::SWPB{rn, rd, rm}
-                } else {
-                    ARMv4InstructionType::SWP{rn, rd, rm}
-                }
+        if (i & bits(5, 6)) == 0 {
+            if test_bit(i, 24) {
+                self.decode_swp(i)
             } else {
-                ARMv4InstructionType::UND
-            },
-            OTHER => self.decode_multiply(i),
-            _ => ARMv4InstructionType::UND,
+                self.decode_multiply(i)
+            }
+        } else {
+            self.decode_transfer_halfword(i)
+        }
+    }
+
+    /// Decode a data swap.
+    fn decode_swp(&mut self, i: u32) -> ARMv4InstructionType {
+        const CLEARED_BITS: u32 = bit(23) | bits(20, 21) | bits(8, 11);
+        if i & CLEARED_BITS == 0 {
+            let rn = ((i >> 16) & 0xF) as usize;
+            let rd = ((i >> 12) & 0xF) as usize;
+            let rm = (i & 0xF) as usize;
+            if test_bit(i, 22) {
+                ARMv4InstructionType::SWPB{rn, rd, rm}
+            } else {
+                ARMv4InstructionType::SWP{rn, rd, rm}
+            }
+        } else {
+            ARMv4InstructionType::UND
         }
     }
 
@@ -400,9 +407,21 @@ pub trait ARMv4Decode<M: Mem32<Addr = u32>>: ARMCore<M> {
         };
 
         if test_bit(i, 20) {
-            ARMv4InstructionType::LDRH{transfer_params, data_reg, offset}
+            match (i & bits(5, 6)) >> 5 {
+                0b00 => ARMv4InstructionType::UND,  // MUL
+                0b01 => ARMv4InstructionType::LDRH{transfer_params, data_reg, offset},
+                0b10 => ARMv4InstructionType::LDRSB{transfer_params, data_reg, offset},
+                0b11 => ARMv4InstructionType::LDRSH{transfer_params, data_reg, offset},
+                _ => unreachable!()
+            }
         } else {
-            ARMv4InstructionType::STRH{transfer_params, data_reg, offset}
+            match (i & bits(5, 6)) >> 5 {
+                0b00 => ARMv4InstructionType::UND,  // SWP
+                0b01 => ARMv4InstructionType::STRH{transfer_params, data_reg, offset},
+                0b10 => ARMv4InstructionType::UND,
+                0b11 => ARMv4InstructionType::UND,
+                _ => unreachable!()
+            }
         }
     }
 
