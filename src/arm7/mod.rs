@@ -247,7 +247,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
     fn interrupt(&mut self) {
         if !self.cpsr.contains(CPSR::I) {
-            println!("Interrupt!");
             self.shadow_registers();
             self.irq_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
             self.regs[PC_REG] = 0x0000_0018;
@@ -316,7 +315,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
 
     fn return_from_exception(&mut self) {
-        println!("RFE!");
         self.shadow_registers();
 
         use Mode::*;
