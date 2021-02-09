@@ -108,7 +108,12 @@ pub trait ARMCore<M: Mem32> {
     fn read_spsr(&self) -> CPSR;
     fn write_spsr(&mut self, data: CPSR);
 
-    fn trigger_exception(&mut self, exception: crate::Exception);
+    // Exceptions
+    fn reset(&mut self);
+    fn interrupt(&mut self);
+    fn fast_interrupt(&mut self);
+    fn software_exception(&mut self);
+    fn undefined_exception(&mut self);
     fn return_from_exception(&mut self);
 
     /// Called when the next fetch is from non-sequential memory.

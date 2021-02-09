@@ -16,7 +16,6 @@ use crate::memory::{
     Mem32, MemCycleType
 };
 use crate::coproc::Coprocessor;
-use crate::Exception;
 use crate::{Debugger, CPUState};
 
 pub struct ARM7TDMI<M: Mem32> {
@@ -230,76 +229,84 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         }
     }
 
-    fn trigger_exception(&mut self, exception: Exception) {
+    fn reset(&mut self) {
         self.shadow_registers();
-        
-        use Exception::*;
-        match exception {
-            Reset => {
-                self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_0000;
-                self.svc_spsr = self.cpsr;
+        self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+        self.regs[PC_REG] = 0x0000_0000;
+        self.svc_spsr = self.cpsr;
 
-                self.cpsr.set_mode(Mode::SVC);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I | CPSR::F);
-            },
-            DataAbort => {
-                self.abt_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_0010;
-                self.abt_spsr = self.cpsr;
+        self.cpsr.set_mode(Mode::SVC);
+        self.cpsr.remove(CPSR::T);
+        self.cpsr.insert(CPSR::I | CPSR::F);
 
-                self.cpsr.set_mode(Mode::ABT);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I);
-            },
-            FastInterrupt if !self.cpsr.contains(CPSR::F) => {
-                self.fiq_regs[6] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_001C;
-                self.fiq_spsr = self.cpsr;
+        self.shadow_registers();
+        // Flush pipeline
+        self.fetched_instr = None;
+        self.decoded_instr = None;
+        self.next_fetch_non_seq();
+    }
+    fn interrupt(&mut self) {
+        if !self.cpsr.contains(CPSR::I) {
+            println!("Interrupt!");
+            self.shadow_registers();
+            self.irq_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+            self.regs[PC_REG] = 0x0000_0018;
+            self.irq_spsr = self.cpsr;
 
-                self.cpsr.set_mode(Mode::FIQ);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I | CPSR::F);
-            },
-            Interrupt if !self.cpsr.contains(CPSR::I) => {
-                self.irq_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_0018;
-                self.irq_spsr = self.cpsr;
+            self.cpsr.set_mode(Mode::IRQ);
+            self.cpsr.remove(CPSR::T);
+            self.cpsr.insert(CPSR::I);
 
-                self.cpsr.set_mode(Mode::IRQ);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I);
-            },
-            PrefetchAbort => {
-                self.abt_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_000C;
-                self.abt_spsr = self.cpsr;
-
-                self.cpsr.set_mode(Mode::ABT);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I);
-            },
-            SoftwareInterrupt => {
-                self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_0008 - self.cpsr.instr_size();
-                self.svc_spsr = self.cpsr;
-
-                self.cpsr.set_mode(Mode::SVC);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I);
-            },
-            UndefinedInstruction => {
-                self.und_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-                self.regs[PC_REG] = 0x0000_0004;
-                self.und_spsr = self.cpsr;
-
-                self.cpsr.set_mode(Mode::UND);
-                self.cpsr.remove(CPSR::T);
-                self.cpsr.insert(CPSR::I);
-            },
-            _ => {},
+            self.shadow_registers();
+            // Flush pipeline
+            self.fetched_instr = None;
+            self.decoded_instr = None;
+            self.next_fetch_non_seq();
         }
+    }
+    fn fast_interrupt(&mut self) {
+        if !self.cpsr.contains(CPSR::F) {
+            self.shadow_registers();
+            self.fiq_regs[6] = self.regs[PC_REG] - self.cpsr.instr_size();
+            self.regs[PC_REG] = 0x0000_001C;
+            self.fiq_spsr = self.cpsr;
+
+            self.cpsr.set_mode(Mode::FIQ);
+            self.cpsr.remove(CPSR::T);
+            self.cpsr.insert(CPSR::I | CPSR::F);
+
+            self.shadow_registers();
+            // Flush pipeline
+            self.fetched_instr = None;
+            self.decoded_instr = None;
+            self.next_fetch_non_seq();
+        }
+    }
+    fn software_exception(&mut self) {
+        self.shadow_registers();
+        self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+        self.regs[PC_REG] = 0x0000_0008 - self.cpsr.instr_size();
+        self.svc_spsr = self.cpsr;
+
+        self.cpsr.set_mode(Mode::SVC);
+        self.cpsr.remove(CPSR::T);
+        self.cpsr.insert(CPSR::I);
+
+        self.shadow_registers();
+        // Flush pipeline
+        self.fetched_instr = None;
+        self.decoded_instr = None;
+        self.next_fetch_non_seq();
+    }
+    fn undefined_exception(&mut self) {
+        self.shadow_registers();
+        self.und_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+        self.regs[PC_REG] = 0x0000_0004;
+        self.und_spsr = self.cpsr;
+
+        self.cpsr.set_mode(Mode::UND);
+        self.cpsr.remove(CPSR::T);
+        self.cpsr.insert(CPSR::I);
 
         self.shadow_registers();
         // Flush pipeline
@@ -309,6 +316,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
 
     fn return_from_exception(&mut self) {
+        println!("RFE!");
         self.shadow_registers();
 
         use Mode::*;

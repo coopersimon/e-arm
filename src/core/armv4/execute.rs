@@ -19,7 +19,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// SWI
     /// Software interrupt
     fn swi(&mut self) -> usize {
-        self.trigger_exception(crate::Exception::SoftwareInterrupt);
+        self.software_exception();
         0
     }
 
@@ -27,7 +27,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
         panic!("undefined");
-        //self.trigger_exception(crate::Exception::UndefinedInstruction);
+        //self.undefined_exception();
         //0
     }
 
@@ -260,6 +260,15 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             }
         }
         cycles
+    }
+
+    /// ADD Rd,PC,#
+    /// Arithmetic add constant to PC. (thumb)
+    fn taddpc(&mut self, rd: usize, op2: u32) -> usize {
+        let op1 = self.read_reg(PC_REG) & 0xFFFF_FFFC;
+        let result = op1.wrapping_add(op2);
+        self.write_reg(rd, result);
+        0
     }
 
     /// SUB

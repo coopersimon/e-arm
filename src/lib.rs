@@ -22,16 +22,3 @@ pub use crate::arm7::{
 };
 
 pub use crate::debugger::*;
-
-/// Exceptions that can be triggered in the processor.
-/// Listed in priority order.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Exception {
-    Reset,
-    DataAbort,
-    FastInterrupt,
-    Interrupt,
-    PrefetchAbort,
-    SoftwareInterrupt,
-    UndefinedInstruction,
-}

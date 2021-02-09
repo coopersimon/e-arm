@@ -260,13 +260,12 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
         } else {
             let rd = ((i >> 8) & 0x7) as usize;
             let offset = ((i & 0xFF) << 2) as u32;
-            let rn = if test_bit(i, 11) {
-                SP_REG
+            if test_bit(i, 11) {
+                let op2 = ALUOperand::Normal(ShiftOperand::Immediate(offset));
+                ARMv4InstructionType::ADD{rd, rn: SP_REG, op2, set_flags: false}
             } else {
-                PC_REG
-            };
-            let op2 = ALUOperand::Normal(ShiftOperand::Immediate(offset));
-            ARMv4InstructionType::ADD{rd, rn, op2, set_flags: false}
+                ARMv4InstructionType::TADDPC{rd, op2: offset}
+            }
         }
     }
 
