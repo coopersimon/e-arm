@@ -120,7 +120,8 @@ pub trait ARMCore<M: Mem32> {
     /// Usually called from store instructions.
     fn next_fetch_non_seq(&mut self);
 
-    fn ref_mem<'a>(&'a mut self) -> &'a mut M;
+    fn ref_mem<'a>(&'a self) -> &'a M;
+    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
 }
 

@@ -149,7 +149,10 @@ impl ARMCore<TestMem> for TestARM4Core {
         
     }
 
-    fn ref_mem<'a>(&'a mut self) -> &'a mut TestMem {
+    fn ref_mem<'a>(&'a self) -> &'a TestMem {
+        &self.memory
+    }
+    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut TestMem {
         &mut self.memory
     }
 

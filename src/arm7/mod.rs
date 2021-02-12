@@ -344,7 +344,11 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.fetch_type = MemCycleType::N;
     }
 
-    fn ref_mem<'a>(&'a mut self) -> &'a mut M {
+    fn ref_mem<'a>(&'a self) -> &'a M {
+        &self.mem
+    }
+
+    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M {
         &mut self.mem
     }
 
