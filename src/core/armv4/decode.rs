@@ -58,7 +58,7 @@ pub trait ARMv4Decode<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn decode_coproc(&mut self, i: u32) -> ARMv4InstructionType {
         if test_bit(i, 25) {
             if test_bit(i, 24) {
-                ARMv4InstructionType::SWI
+                ARMv4InstructionType::SWI{comment: i & 0xFF_FFFF}
             } else {
                 self.decode_coproc_op(i)
             }

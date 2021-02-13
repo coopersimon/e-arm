@@ -63,7 +63,7 @@ impl fmt::Display for ARMv4Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ARMv4InstructionType::*;
         match &self.instr {
-            SWI => write!(f, "SWI{}", self.cond),
+            SWI{comment} => write!(f, "SWI{} {:X}", self.cond, comment),
             UND => write!(f, "UND"),
 
             MRC{coproc, coproc_reg, arm_reg, op_reg, op, info} => write!(f, "MRC{} {},<{}>,{},{},{},<{}>", self.cond, coproc, op, arm_reg, coproc_reg, op_reg, info),
@@ -278,7 +278,7 @@ impl fmt::Display for OpData {
 /// 
 /// Each instruction has a set of parameters.
 pub enum ARMv4InstructionType {
-    SWI,
+    SWI{comment: u32},
     UND,
     // Coproc
     MRC{coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32},
@@ -348,7 +348,7 @@ impl ARMv4InstructionType {
     fn execute<M: Mem32<Addr = u32>, A: ARMv4<M>>(self, core: &mut A) -> usize {
         use ARMv4InstructionType::*;
         match self {
-            SWI => core.swi(),
+            SWI{comment: _} => core.swi(),
             UND => core.undefined(),
 
             MRC{coproc, coproc_reg, arm_reg, op_reg, op, info} => core.mrc(coproc, coproc_reg, arm_reg, op_reg, op, info),

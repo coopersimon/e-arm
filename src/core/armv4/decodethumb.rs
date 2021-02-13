@@ -308,7 +308,7 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
     fn decode_thumb_cond_branch(&mut self, i: u16) -> ARMv4Instruction {
         let cond_bits = ((i >> 8) & 0xF) as u32;
         if cond_bits == 0xF {
-            ARMv4Instruction::new(ARMCondition::AL, ARMv4InstructionType::SWI)
+            ARMv4Instruction::new(ARMCondition::AL, ARMv4InstructionType::SWI{comment: (i & 0xFF) as u32})
         } else {
             let cond = self.decode_cond(cond_bits);
             let offset_i = ((i & 0xFF) as u8) as i8;

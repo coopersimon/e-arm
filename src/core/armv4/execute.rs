@@ -514,16 +514,12 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn bx(&mut self, reg: usize) -> usize {
         let reg_val = self.read_reg(reg);
         let mut cpsr = self.read_cpsr();
-        let from_thumb = cpsr.contains(CPSR::T);
+        let src_i_size = cpsr.instr_size();
         cpsr.set(CPSR::T, test_bit(reg_val, 0));
         self.write_flags(cpsr);
 
         let dest = reg_val & 0xFFFFFFFE;
-        if from_thumb {
-            self.do_branch(dest.wrapping_sub(T_SIZE));
-        } else {
-            self.do_branch(dest.wrapping_sub(I_SIZE));
-        }
+        self.do_branch(dest.wrapping_sub(src_i_size));
         0
     }
 
@@ -956,9 +952,6 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             self.write_reg(transfer_params.base_reg, writeback_addr);
         }
 
-        if s && test_bit(reg_list, PC_REG) {
-            self.return_from_exception();
-        }
         cycles
     }
 

@@ -157,12 +157,16 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
     fn write_reg(&mut self, n: usize, data: u32) {
         if n == PC_REG {
-            self.do_branch(data.wrapping_sub(self.cpsr.instr_size()));
+            let pc = data & 0xFFFF_FFFE;
+            self.do_branch(pc.wrapping_sub(self.cpsr.instr_size()));
         } else {
             self.regs[n] = data;
         }
     }
     fn do_branch(&mut self, dest: u32) {
+        if dest & 1 == 1 {
+            panic!("Set {:X} at {:X}", dest, self.regs[PC_REG]);
+        }
         self.regs[PC_REG] = dest;
 
         // Flush pipeline
@@ -231,7 +235,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
     fn reset(&mut self) {
         self.shadow_registers();
-        self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+        self.svc_regs[1] = self.regs[PC_REG] - 4;//self.cpsr.instr_size();
         self.regs[PC_REG] = 0x0000_0000;
         self.svc_spsr = self.cpsr;
 
@@ -248,7 +252,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn interrupt(&mut self) {
         if !self.cpsr.contains(CPSR::I) {
             self.shadow_registers();
-            self.irq_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+            self.irq_regs[1] = self.regs[PC_REG] - 4;//self.cpsr.instr_size();
             self.regs[PC_REG] = 0x0000_0018;
             self.irq_spsr = self.cpsr;
 
@@ -266,7 +270,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn fast_interrupt(&mut self) {
         if !self.cpsr.contains(CPSR::F) {
             self.shadow_registers();
-            self.fiq_regs[6] = self.regs[PC_REG] - self.cpsr.instr_size();
+            self.fiq_regs[6] = self.regs[PC_REG] - 4;//self.cpsr.instr_size();
             self.regs[PC_REG] = 0x0000_001C;
             self.fiq_spsr = self.cpsr;
 
@@ -283,7 +287,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
     fn software_exception(&mut self) {
         self.shadow_registers();
-        self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+        self.svc_regs[1] = self.regs[PC_REG] - 4;//self.cpsr.instr_size();
         self.regs[PC_REG] = 0x0000_0008 - self.cpsr.instr_size();
         self.svc_spsr = self.cpsr;
 
@@ -299,8 +303,8 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     }
     fn undefined_exception(&mut self) {
         self.shadow_registers();
-        self.und_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-        self.regs[PC_REG] = 0x0000_0004;
+        self.und_regs[1] = self.regs[PC_REG] - 4;//self.cpsr.instr_size();
+        self.regs[PC_REG] = 0x0000_0004 - self.cpsr.instr_size();
         self.und_spsr = self.cpsr;
 
         self.cpsr.set_mode(Mode::UND);
@@ -319,7 +323,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
         use Mode::*;
         match self.cpsr.mode() {
-            USR => panic!("Attempting to transition from USR to USR"),
+            USR => {},//panic!("Attempting to transition from USR to USR"),
             FIQ => {
                 self.cpsr = self.fiq_spsr;
             },
