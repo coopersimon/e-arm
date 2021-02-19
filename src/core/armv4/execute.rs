@@ -528,6 +528,12 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn tbl_lo(&mut self, offset: u32) -> usize {
         let target_addr = self.read_reg(PC_REG).wrapping_add(offset);
         self.write_reg(LINK_REG, target_addr);
+        // To ensure an interrupt doesn't happen between here and the next instruction,
+        // we must briefly disable interrupts.
+        let mut cpsr = self.read_cpsr();
+        cpsr.set(CPSR::BLI, cpsr.contains(CPSR::I));
+        cpsr.insert(CPSR::I);
+        self.write_cpsr(cpsr);
         0
     }
 
@@ -538,6 +544,11 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let dest = self.read_reg(LINK_REG).wrapping_add(offset).wrapping_sub(T_SIZE);
         self.do_branch(dest);
         self.write_reg(LINK_REG, return_addr | 1);
+        // We must re-enable interrupts if they were enabled before.
+        let mut cpsr = self.read_cpsr();
+        cpsr.set(CPSR::I, cpsr.contains(CPSR::BLI));
+        cpsr.remove(CPSR::BLI);
+        self.write_cpsr(cpsr);
         0
     }
 

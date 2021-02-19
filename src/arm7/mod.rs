@@ -116,7 +116,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     }
 
     /// Shadow the registers of the processor.
-    /// 
+    ///
     /// Call this both before and after setting cpsr.
     fn shadow_registers(&mut self) {
         use Mode::*;
@@ -149,6 +149,15 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             },
         }
     }
+
+    /// Flush the pipeline when the program counter changes.
+    ///
+    /// This also disables interrupts until the pipeline fills up.
+    fn flush_pipeline(&mut self) {
+        self.fetched_instr = None;
+        self.decoded_instr = None;
+        self.next_fetch_non_seq();
+    }
 }
 
 impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
@@ -168,11 +177,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             panic!("Set {:X} at {:X}", dest, self.regs[PC_REG]);
         }
         self.regs[PC_REG] = dest;
-
-        // Flush pipeline
-        self.fetched_instr = None;
-        self.decoded_instr = None;
-        self.next_fetch_non_seq();
+        self.flush_pipeline();
     }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
@@ -213,7 +218,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn read_spsr(&self) -> CPSR {
         use Mode::*;
         match self.cpsr.mode() {
-            USR => CPSR::default(),
+            USR => panic!("Can't read SPSR in USR mode"),
             FIQ => self.fiq_spsr,
             IRQ => self.irq_spsr,
             UND => self.und_spsr,
@@ -224,7 +229,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn write_spsr(&mut self, data: CPSR) {
         use Mode::*;
         match self.cpsr.mode() {
-            USR => return,
+            USR => panic!("Can't write SPSR in USR mode"),
             FIQ => self.fiq_spsr = data,
             IRQ => self.irq_spsr = data,
             UND => self.und_spsr = data,
@@ -244,15 +249,12 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.cpsr.insert(CPSR::I | CPSR::F);
 
         self.shadow_registers();
-        // Flush pipeline
-        self.fetched_instr = None;
-        self.decoded_instr = None;
-        self.next_fetch_non_seq();
+        self.flush_pipeline();
     }
     fn interrupt(&mut self) {
-        if !self.cpsr.contains(CPSR::I) {
+        if !self.cpsr.contains(CPSR::I) && self.decoded_instr.is_some() {
             self.shadow_registers();
-            self.irq_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
+            self.irq_regs[1] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
             self.regs[PC_REG] = 0x0000_0018;
             self.irq_spsr = self.cpsr;
 
@@ -261,16 +263,13 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.cpsr.insert(CPSR::I);
 
             self.shadow_registers();
-            // Flush pipeline
-            self.fetched_instr = None;
-            self.decoded_instr = None;
-            self.next_fetch_non_seq();
+            self.flush_pipeline();
         }
     }
     fn fast_interrupt(&mut self) {
-        if !self.cpsr.contains(CPSR::F) {
+        if !self.cpsr.contains(CPSR::F) && self.decoded_instr.is_some() {
             self.shadow_registers();
-            self.fiq_regs[6] = self.regs[PC_REG] - self.cpsr.instr_size();
+            self.fiq_regs[6] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
             self.regs[PC_REG] = 0x0000_001C;
             self.fiq_spsr = self.cpsr;
 
@@ -279,10 +278,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.cpsr.insert(CPSR::I | CPSR::F);
 
             self.shadow_registers();
-            // Flush pipeline
-            self.fetched_instr = None;
-            self.decoded_instr = None;
-            self.next_fetch_non_seq();
+            self.flush_pipeline();
         }
     }
     fn software_exception(&mut self) {
@@ -296,10 +292,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.cpsr.insert(CPSR::I);
 
         self.shadow_registers();
-        // Flush pipeline
-        self.fetched_instr = None;
-        self.decoded_instr = None;
-        self.next_fetch_non_seq();
+        self.flush_pipeline();
     }
     fn undefined_exception(&mut self) {
         self.shadow_registers();
@@ -312,10 +305,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.cpsr.insert(CPSR::I);
 
         self.shadow_registers();
-        // Flush pipeline
-        self.fetched_instr = None;
-        self.decoded_instr = None;
-        self.next_fetch_non_seq();
+        self.flush_pipeline();
     }
 
     fn return_from_exception(&mut self) {
@@ -323,7 +313,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
         use Mode::*;
         match self.cpsr.mode() {
-            USR => {},//panic!("Attempting to transition from USR to USR"),
+            USR => {},
             FIQ => {
                 self.cpsr = self.fiq_spsr;
             },

@@ -33,6 +33,7 @@ bitflags! {
         const C = bit(29);      // Carry
         const V = bit(28);      // Overflow
 
+        const BLI = bit(8);     // Temporary I stack for Thumb BLs
         const I = bit(7);       // IRQs disabled
         const F = bit(6);       // FIQs disabled
         const T = bit(5);       // THUMB instruction set enabled

@@ -56,6 +56,11 @@ fn reg_list_to_str(reg_list: u32) -> String {
             prev_reg = Some(reg);
         }
     }
+    if let Some(prev) = prev_reg {
+        if consecutive {
+            out.push_str(&format!("-{}", prev));
+        }
+    }
     out
 }
 

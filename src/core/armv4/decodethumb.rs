@@ -41,7 +41,8 @@ pub trait Thumbv4Decode<M: Mem32<Addr = u32>>: ARMv4Decode<M> {
         match (i & bits(11, 12)) >> 11 {
             0b00 => {
                 let shift_amount = ((i >> 6) & 0x1F) as u32;
-                ARMv4InstructionType::MOV{rd, op2: ALUOperand::Normal(ShiftOperand::LSL{shift_amount, reg: rs}), set_flags: shift_amount != 0}
+                let op2 = ALUOperand::Normal(ShiftOperand::LSL{shift_amount, reg: rs});
+                ARMv4InstructionType::MOV{rd, op2, set_flags: shift_amount != 0}
             },
             0b01 => {
                 let shift_amount = ((i >> 6) & 0x1F) as u32;
