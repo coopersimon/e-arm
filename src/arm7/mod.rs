@@ -173,9 +173,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         }
     }
     fn do_branch(&mut self, dest: u32) {
-        if dest & 1 == 1 {
-            panic!("Set {:X} at {:X}", dest, self.regs[PC_REG]);
-        }
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
     }

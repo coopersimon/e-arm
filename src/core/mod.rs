@@ -6,7 +6,7 @@ use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
 use crate::coproc::Coprocessor;
-use crate::memory::Mem32;
+use crate::memory::{Mem32, MemCycleType};
 
 pub use armv4::instructions::ARMv4Instruction;
 pub use armv4::decode::ARMv4Decode;
@@ -83,7 +83,7 @@ impl CPSR {
 
 pub type SPSR = CPSR;
 
-pub trait ARMCore<M: Mem32> {
+pub trait ARMCore<M: Mem32<Addr = u32>> {
     fn read_reg(&self, n: usize) -> u32;
     fn write_reg(&mut self, n: usize, data: u32);
     /// Directly modify the PC.
@@ -124,6 +124,38 @@ pub trait ARMCore<M: Mem32> {
     fn ref_mem<'a>(&'a self) -> &'a M;
     fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
+
+    // Memory
+    fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {
+        self.ref_mem_mut().load_byte(cycle, addr)
+    }
+    fn store_byte(&mut self, cycle: MemCycleType, addr: u32, data: u8) -> usize {
+        self.ref_mem_mut().store_byte(cycle, addr, data)
+    }
+    /// Load a halfword, force aligning the address and rotating the result.
+    fn load_halfword(&mut self, cycle: MemCycleType, addr: u32) -> (u16, usize) {
+        let (data, cycles) = self.ref_mem_mut().load_halfword(cycle, addr & 0xFFFF_FFFE);
+        (data.rotate_right((addr & 1) * 8), cycles)
+    }
+    /// Store a halfword, force aligning the address.
+    fn store_halfword(&mut self, cycle: MemCycleType, addr: u32, data: u16) -> usize {
+        self.ref_mem_mut().store_halfword(cycle, addr & 0xFFFF_FFFE, data)
+    }
+    /// Load a halfword, force aligning the address and rotating the result.
+    fn load_word(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
+        let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
+        (data.rotate_right((addr & 3) * 8), cycles)
+    }
+    /// Load a word, force aligning the address.
+    /// Used for load multiple.
+    fn load_word_force_align(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
+        let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
+        (data.rotate_right((addr & 3) * 8), cycles)
+    }
+    /// Store a word, force aligning the address.
+    fn store_word(&mut self, cycle: MemCycleType, addr: u32, data: u32) -> usize {
+        self.ref_mem_mut().store_word(cycle, addr & 0xFFFF_FFFC, data)
+    }
 }
 
 /// ARM condition codes.
