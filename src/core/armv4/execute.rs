@@ -36,7 +36,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// LSL
     /// Logical shift left (fill with zeroes)
     fn lsl(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
-        if set_carry {
+        if set_carry && shift_amount != 0 {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::C, test_bit(val, (32 - shift_amount) as usize));
             self.write_flags(cpsr);
