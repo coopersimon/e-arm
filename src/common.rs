@@ -2,11 +2,13 @@
 
 pub mod u16 {
     /// Set the nth bit.
+    #[inline]
     pub const fn bit(n: usize) -> u16 {
         1 << n
     }
 
     /// Set all bits between the top and bottom (inclusive).
+    #[inline]
     pub const fn bits(mut bottom: usize, top: usize) -> u16 {
         let mut out = 0;
         while bottom <= top {
@@ -17,6 +19,7 @@ pub mod u16 {
     }
 
     /// Check if the nth bit is set.
+    #[inline]
     pub const fn test_bit(val: u16, n: usize) -> bool {
         (val & bit(n)) != 0
     }
@@ -24,11 +27,13 @@ pub mod u16 {
 
 pub mod u32 {
     /// Set the nth bit.
+    #[inline]
     pub const fn bit(n: usize) -> u32 {
         1 << n
     }
 
     /// Set all bits between the top and bottom (inclusive).
+    #[inline]
     pub const fn bits(mut bottom: usize, top: usize) -> u32 {
         let mut out = 0;
         while bottom <= top {
@@ -39,6 +44,7 @@ pub mod u32 {
     }
 
     /// Check if the nth bit is set.
+    #[inline]
     pub const fn test_bit(val: u32, n: usize) -> bool {
         (val & bit(n)) != 0
     }
@@ -46,6 +52,7 @@ pub mod u32 {
 
 pub mod u64 {
     /// Set the nth bit.
+    #[inline]
     pub const fn bit(n: usize) -> u64 {
         1 << n
     }
@@ -61,6 +68,7 @@ pub mod u64 {
     }*/
 
     /// Check if the nth bit is set.
+    #[inline]
     pub const fn test_bit(val: u64, n: usize) -> bool {
         (val & bit(n)) != 0
     }
