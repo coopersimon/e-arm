@@ -117,6 +117,11 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     fn undefined_exception(&mut self);
     fn return_from_exception(&mut self);
 
+    /// If system calls are implemented in rust, this should be called.
+    /// 
+    /// It will return the number of cycles taken if the SWI hook is available.
+    fn try_swi_hook(&mut self, comment: u32) -> Option<usize>;
+
     /// Called when the next fetch is from non-sequential memory.
     /// Usually called from store instructions.
     fn next_fetch_non_seq(&mut self);
@@ -157,6 +162,13 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
         self.ref_mem_mut().store_word(cycle, addr & 0xFFFF_FFFC, data)
     }
 }
+
+/// When SWI is called, a function of this type can be called to handle it outside the interpreter.
+/// 
+/// The first argument is the SWI comment. The second arg is the memory interface. The remaining args are r0-r3.
+/// 
+/// It returns the number of cycles taken, and new values for r0, r1, and r3.
+pub type SwiHook<M: Mem32<Addr = u32>> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
 
 /// ARM condition codes.
 pub enum ARMCondition {

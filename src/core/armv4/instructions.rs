@@ -353,7 +353,7 @@ impl ARMv4InstructionType {
     fn execute<M: Mem32<Addr = u32>, A: ARMv4<M>>(self, core: &mut A) -> usize {
         use ARMv4InstructionType::*;
         match self {
-            SWI{comment: _} => core.swi(),
+            SWI{comment} => core.swi(comment),
             UND => core.undefined(),
 
             MRC{coproc, coproc_reg, arm_reg, op_reg, op, info} => core.mrc(coproc, coproc_reg, arm_reg, op_reg, op, info),

@@ -7,6 +7,7 @@ use crate::core::{
     Mode,
     CPSR,
     SPSR,
+    SwiHook,
     ARMCore,
     ARMv4,
     ARMv4Decode,
@@ -18,6 +19,9 @@ use crate::memory::{
 use crate::coproc::Coprocessor;
 use crate::{Debugger, CPUState};
 
+/// ARM7TDMI processor.
+/// 
+/// Implements ARMv4 instruction set, Thumb compatible.
 pub struct ARM7TDMI<M: Mem32> {
     regs: [u32; 16],
     fiq_regs: [u32; 7],
@@ -33,8 +37,9 @@ pub struct ARM7TDMI<M: Mem32> {
     abt_spsr: SPSR,
     svc_spsr: SPSR,
 
-    mem:    M,
-    coproc: Box<[Option<Box<dyn Coprocessor>>]>,
+    mem:        M,
+    coproc:     Box<[Option<Box<dyn Coprocessor>>]>,
+    swi_hook:   Option<SwiHook<M>>,
     
     fetched_instr: Option<u32>,
     decoded_instr: Option<u32>,
@@ -42,7 +47,7 @@ pub struct ARM7TDMI<M: Mem32> {
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
-    pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>) -> Self {
+    pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>, swi_hook: Option<SwiHook<M>>) -> Self {
         Self {
             regs: [0; 16],
             fiq_regs: [0; 7],
@@ -58,8 +63,9 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             abt_spsr: Default::default(),
             svc_spsr: Default::default(),
 
-            mem:    mem,
-            coproc: utils::to_slice(coproc),
+            mem:        mem,
+            coproc:     utils::to_slice(coproc),
+            swi_hook:   swi_hook,
 
             fetched_instr: None,
             decoded_instr: None,
@@ -329,6 +335,19 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         }
 
         self.shadow_registers();
+    }
+
+    fn try_swi_hook(&mut self, comment: u32) -> Option<usize> {
+        self.swi_hook.map(|hook| {
+            let (cycles, r0, r1, r3) = hook(comment, &mut self.mem, self.regs[0], self.regs[1], self.regs[2], self.regs[3]);
+            self.regs[0] = r0;
+            self.regs[1] = r1;
+            self.regs[3] = r3;
+
+            self.flush_pipeline();
+
+            cycles
+        })
     }
 
     fn next_fetch_non_seq(&mut self) {

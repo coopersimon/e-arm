@@ -145,6 +145,10 @@ impl ARMCore<TestMem> for TestARM4Core {
         // TODO...
     }
 
+    fn try_swi_hook(&mut self, _comment: u32) -> Option<usize> {
+        None
+    }
+
     fn next_fetch_non_seq(&mut self) {
         
     }
