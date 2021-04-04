@@ -155,7 +155,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Used for load multiple.
     fn load_word_force_align(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
         let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
-        (data.rotate_right((addr & 3) * 8), cycles)
+        (data, cycles)
     }
     /// Store a word, force aligning the address.
     fn store_word(&mut self, cycle: MemCycleType, addr: u32, data: u32) -> usize {
@@ -168,7 +168,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 /// The first argument is the SWI comment. The second arg is the memory interface. The remaining args are r0-r3.
 /// 
 /// It returns the number of cycles taken, and new values for r0, r1, and r3.
-pub type SwiHook<M: Mem32<Addr = u32>> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
+pub type SwiHook<M> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
 
 /// ARM condition codes.
 pub enum ARMCondition {

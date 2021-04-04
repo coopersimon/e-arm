@@ -344,8 +344,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.regs[1] = r1;
             self.regs[3] = r3;
 
-            self.flush_pipeline();
-
             cycles
         })
     }
