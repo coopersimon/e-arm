@@ -1,5 +1,7 @@
 /// Coprocessor interface for ARM processor.
 
+pub type CoprocImpl = Box<dyn Coprocessor + Send>;
+
 /// Coprocessor interface.
 /// The main processor will call the coprocessor via these methods.
 pub trait Coprocessor {

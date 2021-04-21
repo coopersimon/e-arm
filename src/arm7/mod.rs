@@ -16,8 +16,11 @@ use crate::core::{
 use crate::memory::{
     Mem32, MemCycleType
 };
-use crate::coproc::Coprocessor;
-use crate::{Debugger, CPUState};
+use crate::coproc::CoprocImpl;
+use crate::{
+    ExternalException,
+    Debugger, CPUState
+};
 
 /// ARM7TDMI processor.
 /// 
@@ -38,7 +41,7 @@ pub struct ARM7TDMI<M: Mem32> {
     svc_spsr: SPSR,
 
     mem:        M,
-    coproc:     Box<[Option<Box<dyn Coprocessor>>]>,
+    coproc:     Box<[Option<CoprocImpl>]>,
     swi_hook:   Option<SwiHook<M>>,
     
     fetched_instr: Option<u32>,
@@ -47,7 +50,7 @@ pub struct ARM7TDMI<M: Mem32> {
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
-    pub fn new(mem: M, coproc: std::collections::HashMap<usize, Box<dyn Coprocessor>>, swi_hook: Option<SwiHook<M>>) -> Self {
+    pub fn new(mem: M, coproc: std::collections::HashMap<usize, CoprocImpl>, swi_hook: Option<SwiHook<M>>) -> Self {
         Self {
             regs: [0; 16],
             fiq_regs: [0; 7],
@@ -78,9 +81,6 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     /// however it may not always execute one.
     /// 
     /// Returns how many cycles passed.
-    /// 
-    /// Note that after each step exceptions should be passed to the CPU
-    /// via `trigger_exception`.
     pub fn step(&mut self) -> usize {
         let pc_next = self.regs[PC_REG];
         let executing_instr = self.decoded_instr;
@@ -118,6 +118,12 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             fetch_cycles + execute_cycles
         };
         self.fetch_type = MemCycleType::S;
+        match self.mem.clock(cycles) {
+            Some(ExternalException::RST) => self.reset(),
+            Some(ExternalException::FIQ) => self.fast_interrupt(),
+            Some(ExternalException::IRQ) => self.interrupt(),
+            None => {}
+        }
         cycles
     }
 
@@ -360,7 +366,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         &mut self.mem
     }
 
-    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
+    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl> {
         self.coproc[coproc].as_mut()
     }
 }

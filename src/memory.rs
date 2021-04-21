@@ -12,10 +12,12 @@ pub enum MemCycleType {
     N
 }
 
-/// A 32-bit memory interface.
+/// A 32-bit clockable memory interface.
 /// Capable of loading and storing bytes (8-bit), halfwords (16-bit), and words (32-bit).
 /// 
-/// All operations return the amount of cycles needed to do the transfer.
+/// The memory interface must also support clocking.
+/// 
+/// All memory operations return the amount of cycles needed to do the transfer.
 /// This value can vary based on the type of memory access.
 pub trait Mem32 {
     type Addr;
@@ -28,4 +30,6 @@ pub trait Mem32 {
 
     fn load_word(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u32, usize);
     fn store_word(&mut self, cycle: MemCycleType, addr: Self::Addr, data: u32) -> usize;
+
+    fn clock(&mut self, cycles: usize) -> Option<super::ExternalException>;
 }

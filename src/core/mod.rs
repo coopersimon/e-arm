@@ -5,7 +5,7 @@ mod armv4;
 use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
-use crate::coproc::Coprocessor;
+use crate::coproc::CoprocImpl;
 use crate::memory::{Mem32, MemCycleType};
 
 pub use armv4::instructions::ARMv4Instruction;
@@ -128,7 +128,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 
     fn ref_mem<'a>(&'a self) -> &'a M;
     fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
-    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
+    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl>;
 
     // Memory
     fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {

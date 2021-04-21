@@ -14,7 +14,7 @@ pub use crate::memory::{
 };
 
 pub use crate::coproc::{
-    Coprocessor
+    Coprocessor, CoprocImpl
 };
 
 pub use crate::arm7::{
@@ -22,3 +22,13 @@ pub use crate::arm7::{
 };
 
 pub use crate::debugger::*;
+
+/// Exceptions that come from external lines.
+pub enum ExternalException {
+    /// Reset
+    RST,
+    /// Fast Interrupt
+    FIQ,
+    /// Interrupt
+    IRQ
+}

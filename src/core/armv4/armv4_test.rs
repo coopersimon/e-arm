@@ -89,6 +89,10 @@ impl Mem32 for TestMem {
         self.0[idx] = data;
         1
     }
+
+    fn clock(&mut self, _cycles: usize) -> Option<crate::ExternalException> {
+        None
+    }
 }
 
 impl ARMCore<TestMem> for TestARM4Core {
@@ -160,7 +164,7 @@ impl ARMCore<TestMem> for TestARM4Core {
         &mut self.memory
     }
 
-    fn ref_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
+    fn ref_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut CoprocImpl> {
         None
     }
 }
