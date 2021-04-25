@@ -509,7 +509,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn bl(&mut self, offset: u32) -> usize {
         let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
-        self.do_branch(current_pc.wrapping_add(offset));
+        // Call into JIT cache.
+        self.call_subroutine(current_pc.wrapping_add(offset));
         0
     }
 
@@ -546,13 +547,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn tbl_hi(&mut self, offset: u32) -> usize {
         let return_addr = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
         let dest = self.read_reg(LINK_REG).wrapping_add(offset).wrapping_sub(T_SIZE);
-        self.do_branch(dest);
         self.write_reg(LINK_REG, return_addr | 1);
         // We must re-enable interrupts if they were enabled before.
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::I, cpsr.contains(CPSR::BLI));
         cpsr.remove(CPSR::BLI);
         self.write_cpsr(cpsr);
+        // Call into JIT cache.
+        self.call_subroutine(dest);
         0
     }
 

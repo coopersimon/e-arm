@@ -17,15 +17,20 @@ use crate::memory::{
     Mem32, MemCycleType
 };
 use crate::coproc::CoprocImpl;
+use crate::jit::{
+    Subroutine, RUN_THRESHOLD, Compiler
+};
 use crate::{
     ExternalException,
     Debugger, CPUState
 };
 
+use std::collections::HashMap;
+
 /// ARM7TDMI processor.
 /// 
 /// Implements ARMv4 instruction set, Thumb compatible.
-pub struct ARM7TDMI<M: Mem32> {
+pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     regs: [u32; 16],
     fiq_regs: [u32; 7],
     irq_regs: [u32; 2],
@@ -47,6 +52,8 @@ pub struct ARM7TDMI<M: Mem32> {
     fetched_instr: Option<u32>,
     decoded_instr: Option<u32>,
     fetch_type:    MemCycleType,
+
+    jit_cache:  HashMap<u32, Subroutine<M, Self>>
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
@@ -73,6 +80,8 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             fetched_instr: None,
             decoded_instr: None,
             fetch_type:    MemCycleType::N,
+
+            jit_cache:  HashMap::new(),
         }
     }
 
@@ -170,6 +179,14 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         self.decoded_instr = None;
         self.next_fetch_non_seq();
     }
+
+    fn jit_compile_subroutine(&self, from: u32) -> Subroutine<M, Self> {
+        let mut compiler = Compiler::new();
+        match compiler.compile(from) {
+            Ok(s) => Subroutine::Compiled(s),
+            Err(_) => Subroutine::CannotCompile
+        }
+    }
 }
 
 impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
@@ -187,6 +204,30 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn do_branch(&mut self, dest: u32) {
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
+    }
+    fn call_subroutine(&mut self, dest: u32) {
+        self.regs[PC_REG] = dest;
+        self.flush_pipeline();
+
+        let subroutine = self.jit_cache.get(&dest).cloned();
+        match subroutine {
+            None => {
+                self.jit_cache.insert(dest, Subroutine::Run(1));
+            },
+            Some(Subroutine::Run(RUN_THRESHOLD)) => {
+                let jit_routine = self.jit_compile_subroutine(dest);
+                self.jit_cache.insert(dest, jit_routine.clone());
+                match jit_routine {
+                    Subroutine::Compiled(s) => s.call(self),
+                    _ => {},
+                }
+            },
+            Some(Subroutine::Run(n)) => {
+                self.jit_cache.insert(dest, Subroutine::Run(n + 1));
+            },
+            Some(Subroutine::CannotCompile) => {},
+            Some(Subroutine::Compiled(s)) => s.call(self),
+        }
     }
 
     fn read_usr_reg(&self, n: usize) -> u32 {

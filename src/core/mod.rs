@@ -84,13 +84,23 @@ impl CPSR {
 pub type SPSR = CPSR;
 
 pub trait ARMCore<M: Mem32<Addr = u32>> {
+    /// Read a single general purpose register.
+    /// 
+    /// Can only access registers available in the current mode.
     fn read_reg(&self, n: usize) -> u32;
+    /// Write a single general purpose register.
+    /// 
+    /// Can only access registers available in the current mode.
     fn write_reg(&mut self, n: usize, data: u32);
     /// Directly modify the PC.
     /// 
     /// Keep in mind the PC will be incremented after the execution completes,
     /// so the destination must be offset by the branch instruction size.
     fn do_branch(&mut self, dest: u32);
+    /// Call a subroutine.
+    /// 
+    /// This is the entry point for JIT compiled code.
+    fn call_subroutine(&mut self, dest: u32);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;
@@ -126,8 +136,11 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Usually called from store instructions.
     fn next_fetch_non_seq(&mut self);
 
+    /// Reference the memory bus immutably.
     fn ref_mem<'a>(&'a self) -> &'a M;
+    /// Reference the memory bus mutably.
     fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
+    /// Reference a coprocessor mutably.
     fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl>;
 
     // Memory

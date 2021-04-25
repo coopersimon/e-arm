@@ -105,6 +105,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn do_branch(&mut self, dest: u32) {
         self.regs[15] = dest;
     }
+    fn call_subroutine(&mut self, dest: u32) {
+        // TODO
+    }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
         self.regs[n]
