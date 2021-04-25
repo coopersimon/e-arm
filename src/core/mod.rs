@@ -9,8 +9,9 @@ use crate::coproc::CoprocImpl;
 use crate::memory::{Mem32, MemCycleType};
 
 pub use armv4::instructions::ARMv4Instruction;
-pub use armv4::decode::ARMv4Decode;
-pub use armv4::decodethumb::Thumbv4Decode;
+//pub use armv4::decode::ARMv4Decode;
+//pub use armv4::decodethumb::Thumbv4Decode;
+pub use armv4::decode::*;
 pub use armv4::execute::ARMv4;
 
 pub mod constants {

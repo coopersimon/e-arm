@@ -172,7 +172,7 @@ impl ARMCore<TestMem> for TestARM4Core {
     }
 }
 
-impl ARMv4Decode<TestMem> for TestARM4Core {}
+//impl ARMv4Decode<TestMem> for TestARM4Core {}
 impl ARMv4<TestMem> for TestARM4Core {}
 
 // Use to setup in state
@@ -193,7 +193,7 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        let instr = cpu.decode_instruction(self.instr);
+        let instr = decode_arm_v4(self.instr);
         let cycles = instr.execute(&mut cpu);
 
         for (i, val) in out.regs.iter().enumerate() {

@@ -10,8 +10,10 @@ use crate::core::{
     SwiHook,
     ARMCore,
     ARMv4,
-    ARMv4Decode,
-    Thumbv4Decode
+    decode_arm_v4,
+    decode_thumb_v4
+    //ARMv4Decode,
+    //Thumbv4Decode
 };
 use crate::memory::{
     Mem32, MemCycleType
@@ -101,7 +103,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             self.fetched_instr = Some(new_fetched_instr as u32);
             // Execute the decoded instr.
             let execute_cycles = if let Some(instr) = executing_instr {
-                let i = self.decode_thumb(instr as u16);
+                let i = decode_thumb_v4(instr as u16);
                 i.execute(self)
             } else {
                 0
@@ -117,7 +119,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             self.fetched_instr = Some(new_fetched_instr);
             // Execute the decoded instr.
             let execute_cycles = if let Some(instr) = executing_instr {
-                let i = self.decode_instruction(instr);
+                let i = decode_arm_v4(instr);
                 i.execute(self)
             } else {
                 0
@@ -413,8 +415,8 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 }
 
 impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
-impl<M: Mem32<Addr = u32>> ARMv4Decode<M> for ARM7TDMI<M> {}
-impl<M: Mem32<Addr = u32>> Thumbv4Decode<M> for ARM7TDMI<M> {}
+//impl<M: Mem32<Addr = u32>> ARMv4Decode<M> for ARM7TDMI<M> {}
+//impl<M: Mem32<Addr = u32>> Thumbv4Decode<M> for ARM7TDMI<M> {}
 
 impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
     fn inspect_state(&mut self) -> CPUState {
@@ -425,13 +427,13 @@ impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
         };
         let thumb_mode = self.cpsr.contains(CPSR::T);
         let pipeline = if thumb_mode {[
-            Some(self.decode_thumb(next_instr as u16)),
-            self.fetched_instr.map(|i| self.decode_thumb(i as u16)),
-            self.decoded_instr.map(|i| self.decode_thumb(i as u16))
+            Some(decode_thumb_v4(next_instr as u16)),
+            self.fetched_instr.map(|i| decode_thumb_v4(i as u16)),
+            self.decoded_instr.map(|i| decode_thumb_v4(i as u16))
         ]} else {[
-            Some(self.decode_instruction(next_instr)),
-            self.fetched_instr.map(|i| self.decode_instruction(i)),
-            self.decoded_instr.map(|i| self.decode_instruction(i))
+            Some(decode_arm_v4(next_instr)),
+            self.fetched_instr.map(|i| decode_arm_v4(i)),
+            self.decoded_instr.map(|i| decode_arm_v4(i))
         ]};
         CPUState {
             regs:   self.regs,

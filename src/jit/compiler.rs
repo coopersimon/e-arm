@@ -3,6 +3,11 @@ use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
 use std::rc::Rc;
 use super::*;
 
+use crate::ARMv4Instruction;
+
+/// Maximum length of subroutine in instructions.
+const SUBROUTINE_MAX_LEN: u32 = 256;
+
 /// Possible reasons why subroutine could not be compiled.
 pub enum CompilerError {
     TooShort,
@@ -12,19 +17,27 @@ pub enum CompilerError {
 
 /// An object to compile ARM code into the host platform's machine code.
 pub struct Compiler {
-
+    /// Decoded instructions that are part of the subroutine.
+    instructions: Vec<ARMv4Instruction>
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
-
+            instructions: Vec::new(),
         }
     }
 
     /// Try and compile a subroutine.
     pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32) -> Result<Rc<JITObject<M, T>>, CompilerError> {
         Err(CompilerError::TooShort)
+    }
+}
+
+impl Compiler {
+    /// Decode and analyse subroutine.
+    fn decode<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32) -> bool {
+        false
     }
 }
 
