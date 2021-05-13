@@ -30,7 +30,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Called when an undefined instruction is encountered.
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
-        panic!("undefined");
+        let pc = self.read_reg(PC_REG);
+        let (val, _) = self.load_word(MemCycleType::S, pc);
+        panic!("undefined: {:X} @ {:X}", val, pc);
         //self.undefined_exception();
         //0
     }
@@ -510,7 +512,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
         // Call into JIT cache.
-        self.call_subroutine(current_pc.wrapping_add(offset));
+        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset));
         0
     }
 
@@ -546,7 +548,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Branch and link. Second part of two instructions.
     fn tbl_hi(&mut self, offset: u32) -> usize {
         let return_addr = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
-        let dest = self.read_reg(LINK_REG).wrapping_add(offset).wrapping_sub(T_SIZE);
+        let dest = self.read_reg(LINK_REG).wrapping_add(offset);
         self.write_reg(LINK_REG, return_addr | 1);
         // We must re-enable interrupts if they were enabled before.
         let mut cpsr = self.read_cpsr();

@@ -5,6 +5,7 @@ mod armv4_test;
 pub mod instructions;
 pub mod decode;
 pub mod execute;
+pub mod compile;
 
 /// Calculate the number of cycles needed for the multiply.
 /// This depends on the status of the most significant bytes of the second operand.

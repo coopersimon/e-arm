@@ -10,18 +10,15 @@ use crate::core::{
     SwiHook,
     ARMCore,
     ARMv4,
+    ARMv4Compiler,
     decode_arm_v4,
-    decode_thumb_v4
-    //ARMv4Decode,
-    //Thumbv4Decode
+    decode_thumb_v4,
+    Subroutine, RUN_THRESHOLD
 };
 use crate::memory::{
     Mem32, MemCycleType
 };
 use crate::coproc::CoprocImpl;
-use crate::jit::{
-    Subroutine, RUN_THRESHOLD, Compiler
-};
 use crate::{
     ExternalException,
     Debugger, CPUState
@@ -55,7 +52,7 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     decoded_instr: Option<u32>,
     fetch_type:    MemCycleType,
 
-    jit_cache:  HashMap<u32, Subroutine<M, Self>>
+    jit_cache:      HashMap<u32, Subroutine<M, Self>>
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
@@ -83,7 +80,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             decoded_instr: None,
             fetch_type:    MemCycleType::N,
 
-            jit_cache:  HashMap::new(),
+            jit_cache:      HashMap::new(),
         }
     }
 
@@ -182,9 +179,9 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         self.next_fetch_non_seq();
     }
 
-    fn jit_compile_subroutine(&self, from: u32) -> Subroutine<M, Self> {
-        let mut compiler = Compiler::new();
-        match compiler.compile(from) {
+    fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<M, Self> {
+        let mut compiler = ARMv4Compiler::new();
+        match compiler.compile(from, &mut self.mem) {
             Ok(s) => Subroutine::Compiled(s),
             Err(_) => Subroutine::CannotCompile
         }
@@ -211,24 +208,39 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
 
-        let subroutine = self.jit_cache.get(&dest).cloned();
-        match subroutine {
+        let subroutine = match self.jit_cache.get(&dest).cloned() {
             None => {
                 self.jit_cache.insert(dest, Subroutine::Run(1));
+                None
             },
             Some(Subroutine::Run(RUN_THRESHOLD)) => {
                 let jit_routine = self.jit_compile_subroutine(dest);
                 self.jit_cache.insert(dest, jit_routine.clone());
                 match jit_routine {
-                    Subroutine::Compiled(s) => s.call(self),
-                    _ => {},
+                    Subroutine::Compiled(s) => Some(s),
+                    _ => None,
                 }
             },
             Some(Subroutine::Run(n)) => {
                 self.jit_cache.insert(dest, Subroutine::Run(n + 1));
+                None
             },
-            Some(Subroutine::CannotCompile) => {},
-            Some(Subroutine::Compiled(s)) => s.call(self),
+            Some(Subroutine::CannotCompile) => None,
+            Some(Subroutine::Compiled(s)) => Some(s),
+        };
+
+        match subroutine {
+            Some(s) => s.call(self),
+            None => {
+                let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
+                loop {
+                    self.step();
+                    if return_location == self.regs[PC_REG] {
+                        self.regs[PC_REG] -= self.cpsr.instr_size();
+                        break;
+                    }
+                }
+            }
         }
     }
 

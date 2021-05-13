@@ -1,6 +1,7 @@
 /// Core traits and types for ARM processors (data access).
 
 mod armv4;
+mod jit;
 
 use std::fmt;
 use bitflags::bitflags;
@@ -8,11 +9,12 @@ use crate::common::u32::{bit, bits};
 use crate::coproc::CoprocImpl;
 use crate::memory::{Mem32, MemCycleType};
 
+pub use jit::*;
+
 pub use armv4::instructions::ARMv4Instruction;
-//pub use armv4::decode::ARMv4Decode;
-//pub use armv4::decodethumb::Thumbv4Decode;
 pub use armv4::decode::*;
 pub use armv4::execute::ARMv4;
+pub use armv4::compile::ARMv4Compiler;
 
 pub mod constants {
     pub const SP_REG: usize = 13;

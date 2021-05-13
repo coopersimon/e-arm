@@ -217,7 +217,7 @@ fn decode_multiply(i: u32) -> ARMv4InstructionType {
         0x5 => ARMv4InstructionType::UMLAL{set_flags, rd_hi: rd, rd_lo: rn, rs, rm},
         0x6 => ARMv4InstructionType::SMULL{set_flags, rd_hi: rd, rd_lo: rn, rs, rm},
         0x7 => ARMv4InstructionType::SMLAL{set_flags, rd_hi: rd, rd_lo: rn, rs, rm},
-        _ => unreachable!("unknown MUL instruction"),
+        _ => ARMv4InstructionType::UND,
     }
 }
 

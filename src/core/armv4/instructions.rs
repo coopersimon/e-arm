@@ -7,8 +7,8 @@ use crate::{
 use std::fmt;
 
 pub struct ARMv4Instruction {
-    cond:   ARMCondition,
-    instr:  ARMv4InstructionType,
+    pub cond:   ARMCondition,
+    pub instr:  ARMv4InstructionType,
 }
 
 impl ARMv4Instruction {

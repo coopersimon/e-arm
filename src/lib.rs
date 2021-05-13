@@ -4,7 +4,6 @@ mod arm7;
 mod memory;
 mod coproc;
 mod debugger;
-mod jit;
 
 pub use crate::core::{
     ARMCore, ARMv4, ARMv4Instruction, CPSR, SwiHook, decode_arm_v4, decode_thumb_v4

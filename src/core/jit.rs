@@ -1,14 +1,10 @@
 // Just-in-time compilation
 
-mod compiler;
-
 use std::rc::Rc;
 use std::marker::PhantomData;
 
-use crate::core::ARMCore;
+use super::ARMCore;
 use crate::memory::Mem32;
-
-pub use compiler::*;
 
 /// A subroutine to execute.
 pub enum Subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>> {
@@ -45,8 +41,32 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> JITObject<M, T> {
     }
 }
 
-
 pub type JITRoutine<ARM> = fn(&mut ARM);
 
 /// When the subroutine is running this many times, JIT it.
 pub const RUN_THRESHOLD: usize = 2;
+
+// Compiler things:
+
+/// Possible reasons why subroutine could not be compiled.
+pub enum CompilerError {
+    TooShort,
+    TooLong,
+    BranchBeforeStart,
+    IllegalInstruction
+}
+
+/// Location of return address.
+pub enum ReturnLocation {
+    Reg(usize),
+    Mem(u32)
+}
+
+impl ReturnLocation {
+    pub fn is_in_reg(&self, reg: usize) -> bool {
+        match self {
+            ReturnLocation::Reg(n) => *n == reg,
+            _ => false
+        }
+    }
+}
