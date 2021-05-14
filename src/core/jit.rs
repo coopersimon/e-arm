@@ -50,22 +50,39 @@ pub const RUN_THRESHOLD: usize = 2;
 
 /// Possible reasons why subroutine could not be compiled.
 pub enum CompilerError {
+    /// Routines must be a certain length to be worth it.
     TooShort,
+    /// Routines cannot be too long.
     TooLong,
+    /// Branches cannot end up before the entry point of the subroutine.
     BranchBeforeStart,
-    IllegalInstruction
+    /// An instruction which is not allowed to be JITted has been encountered.
+    IllegalInstruction,
+    /// Stack pointer was changed non-statically.
+    DynamicStackManipulation,
+    /// Return address was moved non-statically.
+    DynamicReturnAddr,
+    /// Branch destination involved non-static stack or return addr location.
+    InvalidLocalBranch
 }
 
 /// Location of return address.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ReturnLocation {
     Reg(usize),
-    Mem(u32)
+    Stack(i32)
 }
 
 impl ReturnLocation {
     pub fn is_in_reg(&self, reg: usize) -> bool {
         match self {
             ReturnLocation::Reg(n) => *n == reg,
+            _ => false
+        }
+    }
+    pub fn is_in_stack(&self, offset: i32) -> bool {
+        match self {
+            ReturnLocation::Stack(n) => *n == offset,
             _ => false
         }
     }

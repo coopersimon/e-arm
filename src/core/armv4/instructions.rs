@@ -6,6 +6,7 @@ use crate::{
 };
 use std::fmt;
 
+#[derive(Clone)]
 pub struct ARMv4Instruction {
     pub cond:   ARMCondition,
     pub instr:  ARMv4InstructionType,
@@ -134,6 +135,7 @@ impl fmt::Display for ARMv4Instruction {
 }
 
 /// Common parameters for transfer instructions.
+#[derive(Clone)]
 pub struct TransferParams {
     pub base_reg:   usize,
     pub inc:        bool,
@@ -189,6 +191,7 @@ impl TransferParams {
 }
 
 /// ALU 2nd operand types.
+#[derive(Clone)]
 pub enum ALUOperand {
     Normal(ShiftOperand),
     /// Shift "reg" by the value in "shift_reg".
@@ -212,6 +215,7 @@ impl fmt::Display for ALUOperand {
 /// ALU 2nd operand types with a shift by register value.
 /// 
 /// These all take an extra cycle.
+#[derive(Clone)]
 pub enum RegShiftOperand {
     LSL,
     LSR,
@@ -234,6 +238,7 @@ impl fmt::Display for RegShiftOperand {
 /// Transfer offset and ALU 2nd operand types.
 /// 
 /// None of these take an extra cycle when used in the ALU.
+#[derive(Clone)]
 pub enum ShiftOperand {
     Immediate(u32),
     Register(usize),
@@ -264,6 +269,7 @@ impl fmt::Display for ShiftOperand {
 }
 
 /// Simple data types, used for halfword offset and msr.
+#[derive(Clone)]
 pub enum OpData {
     Immediate(u32),
     Register(usize)
@@ -282,6 +288,7 @@ impl fmt::Display for OpData {
 /// Decoded instructions.
 /// 
 /// Each instruction has a set of parameters.
+#[derive(Clone)]
 pub enum ARMv4InstructionType {
     SWI{comment: u32},
     UND,
