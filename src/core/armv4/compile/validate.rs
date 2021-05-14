@@ -8,9 +8,9 @@ use crate::{
     core::{ARMCore, CompilerError, ReturnLocation, constants}
 };
 use super::{
-    DecodedInstruction,
+    codegen::DecodedInstruction,
     super::{
-        instructions::{ARMv4Instruction, ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
+        instructions::{ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
         decode::*
     }
 };
@@ -56,7 +56,8 @@ impl Validator {
 
     pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, mem: &mut M) -> Result<Vec<DecodedInstruction>, CompilerError> {
         let mut instructions = Vec::new();
-        let mut labels = BTreeSet::new();
+        let mut labels = BTreeMap::new();
+        let mut label_idx = 0;
 
         // Validate each instruction.
         loop {
@@ -65,6 +66,14 @@ impl Validator {
             // Decode the next instruction.
             let (i, cycles) = mem.load_word(MemCycleType::N, self.current_addr);
             let decoded = decode_arm_v4(i);
+            println!("Encountered i: {}", decoded);
+            let mut instruction = DecodedInstruction {
+                instruction: decoded.clone(),
+                fetch_cycles: cycles,
+                label: None,
+                branch_to: None,
+                ret: false,
+            };
             // Take certain actions depending on the instruction...
             match &decoded.instr {
                 // Check the instruction is allowed:
@@ -76,11 +85,20 @@ impl Validator {
                 // Take a note of internal branch destinations:
                 ARMv4InstructionType::B{offset} => {
                     let dest = self.validate_branch(*offset)?;
-                    labels.insert(dest);
+                    instruction.branch_to = Some(label_idx);
+                    labels.insert(dest, label_idx);
+                    label_idx += 1;
                 },
 
                 // Track the stack & return address:
                 ARMv4InstructionType::MOV{rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), ..} if self.current_meta.ret.is_in_reg(*rs) => {
+                    // Check if we are returning now:
+                    if *rd == constants::PC_REG {
+                        instruction.ret = true;
+                        if self.branches.is_empty() {
+                            return self.resolve_labels(instructions, labels);
+                        }
+                    }
                     self.current_meta.ret = ReturnLocation::Reg(*rd);
                 },
                 ARMv4InstructionType::STM{transfer_params: TransferParams{base_reg: constants::SP_REG, inc, pre_index, writeback}, reg_list, ..} => {
@@ -91,25 +109,26 @@ impl Validator {
                 },
                 ARMv4InstructionType::LDM{transfer_params: TransferParams{base_reg: constants::SP_REG, inc, pre_index, writeback}, reg_list, ..} => {
                     let ret_in_pc = self.validate_ldm(*inc, *pre_index, *writeback, *reg_list)?;
-                    if ret_in_pc && self.branches.is_empty() {
-                        return self.resolve_labels(instructions, labels);
+                    if ret_in_pc {
+                        instruction.ret = true;
+                        if self.branches.is_empty() {
+                            return self.resolve_labels(instructions, labels);
+                        }
                     }
                 },
                 ARMv4InstructionType::LDR{transfer_params: TransferParams{base_reg: constants::SP_REG, inc, pre_index, writeback}, data_reg, offset} => {
                     let ret_in_pc = self.validate_ldr(*inc, *pre_index, *writeback, *data_reg, offset.clone())?;
-                    if ret_in_pc && self.branches.is_empty() {
-                        return self.resolve_labels(instructions, labels);
+                    if ret_in_pc {
+                        instruction.ret = true;
+                        if self.branches.is_empty() {
+                            return self.resolve_labels(instructions, labels);
+                        }
                     }
                 },
 
                 // Check if we are returning now:
-                ARMv4InstructionType::MOV{rd: constants::PC_REG, op2: ALUOperand::Normal(ShiftOperand::Register(r)), ..} => {
-                    // We only return if we have covered all the possible branches, and the return value is written to PC.
-                    if self.current_meta.ret.is_in_reg(*r) && self.branches.is_empty() {
-                        return self.resolve_labels(instructions, labels);
-                    }
-                },
                 ARMv4InstructionType::BX{reg} => if self.current_meta.ret.is_in_reg(*reg) {
+                    instruction.ret = true;
                     // We only return if we have covered all the possible branches, and the return value is written to PC.
                     if self.branches.is_empty() {
                         return self.resolve_labels(instructions, labels);
@@ -136,22 +155,18 @@ impl Validator {
                 return Err(CompilerError::TooLong);
             }
 
-            instructions.push(DecodedInstruction {
-                instruction: decoded,
-                fetch_cycles: cycles,
-                label: false,
-            });
+            instructions.push(instruction);
         }
     }
 }
 
 impl Validator {
     // Resolve label destinations.
-    fn resolve_labels(&self, mut instructions: Vec<DecodedInstruction>, labels: BTreeSet<u32>) -> Result<Vec<DecodedInstruction>, CompilerError> {
-        labels.iter().map(|label_addr| (label_addr - self.start_addr) / constants::I_SIZE)
-            .for_each(|addr| {
-                instructions[addr as usize].label = true;
-            });
+    fn resolve_labels(&self, mut instructions: Vec<DecodedInstruction>, labels: BTreeMap<u32, usize>) -> Result<Vec<DecodedInstruction>, CompilerError> {
+        for (label_addr, label_idx) in labels.iter() {
+            let i = (label_addr - self.start_addr) / constants::I_SIZE;
+            instructions[i as usize].label = Some(*label_idx);
+        }
 
         Ok(instructions)
     }

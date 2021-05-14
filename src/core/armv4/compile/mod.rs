@@ -1,45 +1,23 @@
 
+#[allow(dead_code)]
+mod test;
 mod validate;
+mod codegen;
 
 use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
 use std::rc::Rc;
-use std::collections::{BTreeSet, BTreeMap};
 
 use crate::{
-    Mem32, MemCycleType,
-    core::{ARMCore, JITObject, JITRoutine, CompilerError, ReturnLocation, constants}
+    Mem32,
+    core::{ARMCore, JITObject, JITRoutine, CompilerError}
 };
-use super::{
-    instructions::{ARMv4Instruction, ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
-    decode::*
-};
-
-pub struct DecodedInstruction {
-    /// The instruction itself.
-    instruction: ARMv4Instruction,
-    /// Number of cycles needed to fetch the instruction.
-    fetch_cycles: usize,
-    /// If this instruction needs a label emitted before it.
-    label: bool,
-}
 
 /// An object to compile ARM code into the host platform's machine code.
-pub struct ARMv4Compiler {
-    /// Decoded instructions that are part of the subroutine.
-    instructions: Vec<DecodedInstruction>,
-
-    // Compiling:
-    /// Branch destinations that need labels emitted before them.
-    labels: BTreeSet<u32>,
-}
+pub struct ARMv4Compiler {}
 
 impl ARMv4Compiler {
     pub fn new() -> Self {
-        Self {
-            instructions: Vec::new(),
-
-            labels: BTreeSet::new(),
-        }
+        Self {}
     }
 
     /// Try and compile a subroutine.
@@ -47,7 +25,19 @@ impl ARMv4Compiler {
         let mut validator = validate::Validator::new(addr);
         let instructions = validator.decode_and_validate::<M, T>(mem)?;
         // TODO: code-gen for instructions.
-        Err(CompilerError::TooShort)
+        Ok(self.code_gen(instructions))
+    }
+
+    fn code_gen<M: Mem32<Addr = u32>, T: ARMCore<M>>(&self, instructions: Vec<codegen::DecodedInstruction>) -> Rc<JITObject<M, T>> {
+        let mut assembler = dynasmrt::x64::Assembler::new().unwrap();
+        // TODO: trampoline
+        for i in instructions {
+            i.codegen_x64(&mut assembler);
+        }
+        // TODO: de-trampoline
+        let buf = assembler.finalize().unwrap();
+        let routine: extern "Rust" fn(ts: &mut T) = unsafe { std::mem::transmute(buf.ptr(dynasmrt::AssemblyOffset(0))) };
+        Rc::new(JITObject::new(routine))
     }
 }
 
@@ -56,6 +46,7 @@ pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCor
 }
 
 pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>() -> JITRoutine<T> {
+    
     let mut ops = dynasmrt::x64::Assembler::new().unwrap();
 
     let call_subroutine = wrap_call_subroutine::<M, T> as i64;

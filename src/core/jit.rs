@@ -35,6 +35,13 @@ pub struct JITObject<M: Mem32<Addr = u32>, T: ARMCore<M>> {
 }
 
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> JITObject<M, T> {
+    pub fn new(routine: JITRoutine<T>,) -> Self {
+        Self {
+            routine: routine,
+            _unused: PhantomData
+        }
+    }
+
     #[inline]
     pub fn call(&self, cpu: &mut T) {
         (self.routine)(cpu)
@@ -49,6 +56,7 @@ pub const RUN_THRESHOLD: usize = 2;
 // Compiler things:
 
 /// Possible reasons why subroutine could not be compiled.
+#[derive(Debug)]
 pub enum CompilerError {
     /// Routines must be a certain length to be worth it.
     TooShort,
