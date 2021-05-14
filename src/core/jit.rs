@@ -58,6 +58,8 @@ pub enum CompilerError {
     BranchBeforeStart,
     /// An instruction which is not allowed to be JITted has been encountered.
     IllegalInstruction,
+    /// The PC was changed dynamically.
+    DynamicPCManipulation,
     /// Stack pointer was changed non-statically.
     DynamicStackManipulation,
     /// Return address was moved non-statically.
