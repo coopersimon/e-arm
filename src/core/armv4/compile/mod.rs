@@ -4,7 +4,7 @@ mod test;
 mod validate;
 mod codegen;
 
-use dynasmrt::{dynasm, DynasmApi, DynasmLabelApi};
+use dynasmrt::{dynasm, DynasmApi};
 use std::rc::Rc;
 
 use crate::{
@@ -24,20 +24,16 @@ impl ARMv4Compiler {
     pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<M, T>>, CompilerError> {
         let mut validator = validate::Validator::new(addr);
         let instructions = validator.decode_and_validate::<M, T>(mem)?;
-        // TODO: code-gen for instructions.
         Ok(self.code_gen(instructions))
     }
 
     fn code_gen<M: Mem32<Addr = u32>, T: ARMCore<M>>(&self, instructions: Vec<codegen::DecodedInstruction>) -> Rc<JITObject<M, T>> {
-        let mut assembler = dynasmrt::x64::Assembler::new().unwrap();
-        // TODO: trampoline
+        let mut assembler = codegen::CodeGeneratorX64::new();
+        assembler.prelude();
         for i in instructions {
-            i.codegen_x64(&mut assembler);
+            assembler.codegen(&i);
         }
-        // TODO: de-trampoline
-        let buf = assembler.finalize().unwrap();
-        let routine: extern "Rust" fn(ts: &mut T) = unsafe { std::mem::transmute(buf.ptr(dynasmrt::AssemblyOffset(0))) };
-        Rc::new(JITObject::new(routine))
+        assembler.finish()
     }
 }
 
