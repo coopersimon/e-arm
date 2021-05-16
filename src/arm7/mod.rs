@@ -52,7 +52,7 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     decoded_instr: Option<u32>,
     fetch_type:    MemCycleType,
 
-    jit_cache:      HashMap<u32, Subroutine<M, Self>>
+    jit_cache:      HashMap<u32, Subroutine>
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
@@ -179,9 +179,9 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         self.next_fetch_non_seq();
     }
 
-    fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<M, Self> {
+    fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine {
         let mut compiler = ARMv4Compiler::new();
-        match compiler.compile(from, &mut self.mem) {
+        match compiler.compile::<M, Self>(from, &mut self.mem) {
             Ok(s) => Subroutine::Compiled(s),
             Err(_) => Subroutine::CannotCompile
         }

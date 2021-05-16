@@ -7,17 +7,17 @@ use super::ARMCore;
 use crate::memory::Mem32;
 
 /// A subroutine to execute.
-pub enum Subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>> {
+pub enum Subroutine {
     /// This subroutine has run n times before.
     Run(usize),
     /// This subroutine cannot be compiled.
     CannotCompile,
     /// This subroutine has been JIT-compiled.
-    Compiled(Rc<JITObject<M, T>>),
+    Compiled(Rc<JITObject>),
     //_Unused(Infallible, PhantomData<M>)
 }
 
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> Clone for Subroutine<M, T> {
+impl Clone for Subroutine {
     fn clone(&self) -> Self {
         use Subroutine::*;
         match self {
@@ -28,27 +28,23 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> Clone for Subroutine<M, T> {
     }
 }
 
-pub struct JITObject<M: Mem32<Addr = u32>, T: ARMCore<M>> {
-    routine: JITRoutine<T>,
-
-    _unused: PhantomData<M>
+pub struct JITObject {
+    routine: dynasmrt::ExecutableBuffer,
 }
 
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> JITObject<M, T> {
-    pub fn new(routine: JITRoutine<T>,) -> Self {
+impl JITObject {
+    pub fn new(routine: dynasmrt::ExecutableBuffer) -> Self {
         Self {
             routine: routine,
-            _unused: PhantomData
         }
     }
 
     #[inline]
-    pub fn call(&self, cpu: &mut T) {
-        (self.routine)(cpu)
+    pub fn call<M: Mem32<Addr = u32>, T: ARMCore<M>>(&self, cpu: &mut T) {
+        let routine: extern "Rust" fn(ts: &mut T) = unsafe { std::mem::transmute(self.routine.ptr(dynasmrt::AssemblyOffset(0))) };
+        routine(cpu);
     }
 }
-
-pub type JITRoutine<ARM> = fn(&mut ARM);
 
 /// When the subroutine is running this many times, JIT it.
 pub const RUN_THRESHOLD: usize = 2;

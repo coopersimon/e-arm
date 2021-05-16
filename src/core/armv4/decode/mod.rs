@@ -6,7 +6,7 @@ use crate::{
     core::ARMCondition
 };
 
-pub use arm::decode_instruction as decode_arm_v4;
+pub use self::arm::decode_instruction as decode_arm_v4;
 pub use thumb::decode_thumb as decode_thumb_v4;
 
 /// Make fsxc mask for manipulating PSR.

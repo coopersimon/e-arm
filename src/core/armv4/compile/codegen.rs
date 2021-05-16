@@ -33,25 +33,20 @@ pub struct DecodedInstruction {
     pub ret: bool,
 }
 
-pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
+pub struct CodeGeneratorX64 {
     assembler: Assembler<X64Relocation>,
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
-
-    _unused_m: PhantomData<M>,
-    _unused_t: PhantomData<T>
 }
 
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl CodeGeneratorX64 {
     pub fn new() -> Self {
         Self {
             assembler: Assembler::new().unwrap(),
             label_table: std::collections::BTreeMap::new(),
-            _unused_m: PhantomData,
-            _unused_t: PhantomData
         }
     }
 
-    pub fn prelude(&mut self) {
+    pub fn prelude<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self) {
         let read_reg = wrap_read_reg::<M, T> as i64;
 
         dynasm!(self.assembler
@@ -68,23 +63,24 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; push r15
 
             // Write regs
+            // TODO: do this in a single call
             ; mov rbx, QWORD read_reg
 
             ; mov rsi, 0
             ; call rbx
-            ; mov r8, rax
+            ; push rax
 
             ; mov rsi, 1
             ; call rbx
-            ; mov r9, rax
+            ; push rax
 
             ; mov rsi, 2
             ; call rbx
-            ; mov r10, rax
+            ; push rax
 
             ; mov rsi, 3
             ; call rbx
-            ; mov r11, rax
+            ; push rax
 
             ; mov rsi, 4
             ; call rbx
@@ -101,16 +97,20 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov rsi, 13
             ; call rbx
             ; mov r15, rax
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
         );
     }
 
-    pub fn finish(self) -> Rc<JITObject<M, T>> {
+    pub fn finish(self) -> Rc<JITObject> {
         let buf = self.assembler.finalize().unwrap();
-        let routine: extern "Rust" fn(ts: &mut T) = unsafe { std::mem::transmute(buf.ptr(dynasmrt::AssemblyOffset(0))) };
-        Rc::new(JITObject::new(routine))
+        Rc::new(JITObject::new(buf))
     }
 
-    pub fn codegen(&mut self, instruction: &DecodedInstruction) {
+    pub fn codegen<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, instruction: &DecodedInstruction) {
         if let Some(label_id) = instruction.label {
             let label = self.get_label(label_id);
             dynasm!(self.assembler
@@ -122,11 +122,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         // TODO: conditional...
 
         if instruction.ret {
-            self.ret();
+            self.ret::<M, T>();
         } else {
             match &instruction.instruction.instr {
-                ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov(*rd, op2, *set_flags),
-                ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov::<M, T>(*rd, op2, *set_flags),
+                ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add::<M, T>(*rd, *rn, op2, *set_flags),
                 _ => panic!("not supported"),
             }
         }
@@ -134,6 +134,12 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         // TODO: conditional end
     }
 }
+
+pub unsafe extern "Rust" fn hello_world<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) {
+    println!("Hello world!");
+    //cpu.as_mut().unwrap().write_reg(reg, data);
+}
+
 
 enum DataOperand {
     Imm(i32),
@@ -154,7 +160,7 @@ impl DataOperand {
 }
 
 // Helpers
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl CodeGeneratorX64 {
     /// Dynamic label lookup
     fn get_label(&mut self, id: usize) -> DynamicLabel {
         if let Some(label) = self.label_table.get(&id) {
@@ -178,13 +184,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             5 => Some(13),
             6 => Some(14),
             13 => Some(15),
-            r => None
+            _ => None
         }
     }
 
     // Code-gen for an ALU operand.
     // Returns the type of operand for the final operation.
-    fn alu_operand(&mut self, op: &ALUOperand) -> DataOperand {
+    fn alu_operand<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, op: &ALUOperand) -> DataOperand {
         match op {
             ALUOperand::Normal(op) => match op {
                 ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
@@ -197,7 +203,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                             ; .arch x64
                             ; mov rbx, QWORD read_reg
                             ; mov rsi, reg
+                            ; push r8
+                            ; push r9
+                            ; push r10
+                            ; push r11
                             ; call rbx
+                            ; pop r11
+                            ; pop r10
+                            ; pop r9
+                            ; pop r8
                         );
                         // RAX
                         DataOperand::Reg(0)
@@ -209,7 +223,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
-    fn ret(&mut self) {
+    fn ret<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self) {
+        println!("Gen return!");
         let write_reg = wrap_write_reg::<M, T> as i64;
 
         dynasm!(self.assembler
@@ -217,20 +232,24 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             // Write back regs
             ; mov rbx, QWORD write_reg
 
+            ; push r11
+            ; push r10
+            ; push r9
+
             ; mov rsi, 0
             ; mov rdx, r8
             ; call rbx
 
             ; mov rsi, 1
-            ; mov rdx, r9
+            ; pop rdx
             ; call rbx
 
             ; mov rsi, 2
-            ; mov rdx, r10
+            ; pop rdx
             ; call rbx
 
             ; mov rsi, 3
-            ; mov rdx, r11
+            ; pop rdx
             ; call rbx
 
             ; mov rsi, 4
@@ -250,10 +269,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; call rbx
 
             // Restore
-            ; pop r12
-            ; pop r13
-            ; pop r14
             ; pop r15
+            ; pop r14
+            ; pop r13
+            ; pop r12
             ; mov rsp, rbp
             ; pop rbp
 
@@ -263,11 +282,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 }
 
 // Instructions
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
-    fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
+impl CodeGeneratorX64 {
+    fn mov<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
         let dest_reg = dest.unwrap_or(2); // 2 = RDX
-        let op = self.alu_operand(op2);
+        let op = self.alu_operand::<M, T>(op2);
         match op {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
@@ -290,16 +309,24 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; .arch x64
                 ; mov rbx, QWORD write_reg
                 ; mov rsi, reg
+                ; push r8
+                ; push r9
+                ; push r10
+                ; push r11
                 ; call rbx
+                ; pop r11
+                ; pop r10
+                ; pop r9
+                ; pop r8
             );
         }
     }
 
-    fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+    fn add<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
         let dest_reg = dest.unwrap_or(2); // 2 = RDX
 
-        let mut op2 = self.alu_operand(op2);
+        let mut op2 = self.alu_operand::<M, T>(op2);
 
         let op1 = self.get_register(rn);
         let op1_reg = op1.unwrap_or_else(|| {
@@ -316,7 +343,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; .arch x64
                 ; mov rbx, QWORD read_reg
                 ; mov rsi, reg
+                ; push r8
+                ; push r9
+                ; push r10
+                ; push r11
                 ; call rbx
+                ; pop r11
+                ; pop r10
+                ; pop r9
+                ; pop r8
             );
             0   // 0 = RAX
         });
@@ -350,7 +385,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; .arch x64
                 ; mov rbx, QWORD write_reg
                 ; mov rsi, reg
+                ; push r8
+                ; push r9
+                ; push r10
+                ; push r11
                 ; call rbx
+                ; pop r11
+                ; pop r10
+                ; pop r9
+                ; pop r8
             );
         }
     }
@@ -362,10 +405,12 @@ pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCor
 }
 
 pub unsafe extern "Rust" fn wrap_read_reg<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, reg: usize) -> u32 {
+    println!("Read reg {}", reg);
     cpu.as_mut().unwrap().read_reg(reg)
 }
 
 pub unsafe extern "Rust" fn wrap_write_reg<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, reg: usize, data: u32) {
+    println!("Write {:X} to reg {}", data, reg);
     cpu.as_mut().unwrap().write_reg(reg, data);
 }
 

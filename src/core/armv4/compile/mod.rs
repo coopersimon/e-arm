@@ -4,12 +4,11 @@ mod test;
 mod validate;
 mod codegen;
 
-use dynasmrt::{dynasm, DynasmApi};
 use std::rc::Rc;
 
 use crate::{
     Mem32,
-    core::{ARMCore, JITObject, JITRoutine, CompilerError}
+    core::{ARMCore, JITObject, CompilerError}
 };
 
 /// An object to compile ARM code into the host platform's machine code.
@@ -21,23 +20,21 @@ impl ARMv4Compiler {
     }
 
     /// Try and compile a subroutine.
-    pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<M, T>>, CompilerError> {
+    pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject>, CompilerError> {
         let mut validator = validate::Validator::new(addr);
         let instructions = validator.decode_and_validate::<M, T>(mem)?;
-        Ok(self.code_gen(instructions))
-    }
 
-    fn code_gen<M: Mem32<Addr = u32>, T: ARMCore<M>>(&self, instructions: Vec<codegen::DecodedInstruction>) -> Rc<JITObject<M, T>> {
         let mut assembler = codegen::CodeGeneratorX64::new();
-        assembler.prelude();
+        assembler.prelude::<M, T>();
         for i in instructions {
-            assembler.codegen(&i);
+            assembler.codegen::<M, T>(&i);
         }
-        assembler.finish()
+
+        Ok(assembler.finish())
     }
 }
 
-pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(ts: *mut T, dest: u32) {
+/*pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(ts: *mut T, dest: u32) {
     ts.as_mut().unwrap().call_subroutine(dest);
 }
 
@@ -63,4 +60,4 @@ pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>() -> JITRoutine<T> {
     let test_func: extern "Rust" fn(ts: &mut T) = unsafe { std::mem::transmute(buf.ptr(dynasmrt::AssemblyOffset(0))) };
 
     test_func
-}
+}*/

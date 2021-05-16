@@ -96,6 +96,7 @@ impl Validator {
                     if *rd == constants::PC_REG {
                         instruction.ret = true;
                         if self.branches.is_empty() {
+                            instructions.push(instruction);
                             return self.resolve_labels(instructions, labels);
                         }
                     }
@@ -112,6 +113,7 @@ impl Validator {
                     if ret_in_pc {
                         instruction.ret = true;
                         if self.branches.is_empty() {
+                            instructions.push(instruction);
                             return self.resolve_labels(instructions, labels);
                         }
                     }
@@ -121,6 +123,7 @@ impl Validator {
                     if ret_in_pc {
                         instruction.ret = true;
                         if self.branches.is_empty() {
+                            instructions.push(instruction);
                             return self.resolve_labels(instructions, labels);
                         }
                     }
@@ -131,6 +134,7 @@ impl Validator {
                     instruction.ret = true;
                     // We only return if we have covered all the possible branches, and the return value is written to PC.
                     if self.branches.is_empty() {
+                        instructions.push(instruction);
                         return self.resolve_labels(instructions, labels);
                     }
                 } else {
