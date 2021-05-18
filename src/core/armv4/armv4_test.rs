@@ -102,6 +102,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn write_reg(&mut self, n: usize, data: u32) {
         self.regs[n] = data;
     }
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
+        &mut self.regs
+    }
     fn do_branch(&mut self, dest: u32) {
         self.regs[15] = dest;
     }

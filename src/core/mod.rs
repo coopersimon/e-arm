@@ -95,6 +95,8 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// Can only access registers available in the current mode.
     fn write_reg(&mut self, n: usize, data: u32);
+    /// Get a reference to all of the registers.
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32];
     /// Directly modify the PC.
     /// 
     /// Keep in mind the PC will be incremented after the execution completes,

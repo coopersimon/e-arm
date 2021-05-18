@@ -200,6 +200,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.regs[n] = data;
         }
     }
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
+        &mut self.regs
+    }
     fn do_branch(&mut self, dest: u32) {
         self.regs[PC_REG] = dest;
         self.flush_pipeline();

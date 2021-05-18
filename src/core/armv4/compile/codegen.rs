@@ -47,7 +47,7 @@ impl CodeGeneratorX64 {
     }
 
     pub fn prelude<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self) {
-        let read_reg = wrap_read_reg::<M, T> as i64;
+        let mut_regs = wrap_mut_regs::<M, T> as i64;
 
         dynasm!(self.assembler
             ; .arch x64
@@ -63,45 +63,19 @@ impl CodeGeneratorX64 {
             ; push r15
 
             // Write regs
-            // TODO: do this in a single call
-            ; mov rbx, QWORD read_reg
-
-            ; mov rsi, 0
+            ; push rdi
+            ; mov rbx, QWORD mut_regs
             ; call rbx
-            ; push rax
+            ; pop rdi
 
-            ; mov rsi, 1
-            ; call rbx
-            ; push rax
-
-            ; mov rsi, 2
-            ; call rbx
-            ; push rax
-
-            ; mov rsi, 3
-            ; call rbx
-            ; push rax
-
-            ; mov rsi, 4
-            ; call rbx
-            ; mov r12, rax
-
-            ; mov rsi, 5
-            ; call rbx
-            ; mov r13, rax
-
-            ; mov rsi, 6
-            ; call rbx
-            ; mov r14, rax
-
-            ; mov rsi, 13
-            ; call rbx
-            ; mov r15, rax
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
+            ; mov r8d, [rax]
+            ; mov r9d, [rax+4]
+            ; mov r10d, [rax+8]
+            ; mov r11d, [rax+12]
+            ; mov r12d, [rax+16]
+            ; mov r13d, [rax+20]
+            ; mov r14d, [rax+24]
+            ; mov r15d, [rax+52]
         );
     }
 
@@ -188,9 +162,40 @@ impl CodeGeneratorX64 {
         }
     }
 
+    // Code gen for first operand of ALU instructions (always a register).
+    fn alu_operand_1<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rn: usize, op2: &mut DataOperand) -> u8 {
+        let op1 = self.get_register(rn);
+        op1.unwrap_or_else(|| {
+            // If op2 is in RAX, we need to move it.
+            if op2.mov_to_rdx() {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov edx, eax
+                );
+            }
+            let read_reg = wrap_read_reg::<M, T> as i64;
+            let reg = rn as i32;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov rbx, QWORD read_reg
+                ; mov rsi, reg
+                //; push r8
+                //; push r9
+                //; push r10
+                //; push r11
+                ; call rbx
+                //; pop r11
+                //; pop r10
+                //; pop r9
+                //; pop r8
+            );
+            0   // 0 = RAX
+        })
+    }
+
     // Code-gen for an ALU operand.
-    // Returns the type of operand for the final operation.
-    fn alu_operand<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, op: &ALUOperand) -> DataOperand {
+    // Returns the type of operand for the operation.
+    fn alu_operand_2<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, op: &ALUOperand) -> DataOperand {
         match op {
             ALUOperand::Normal(op) => match op {
                 ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
@@ -203,15 +208,15 @@ impl CodeGeneratorX64 {
                             ; .arch x64
                             ; mov rbx, QWORD read_reg
                             ; mov rsi, reg
-                            ; push r8
-                            ; push r9
-                            ; push r10
-                            ; push r11
+                            //; push r8
+                            //; push r9
+                            //; push r10
+                            //; push r11
                             ; call rbx
-                            ; pop r11
-                            ; pop r10
-                            ; pop r9
-                            ; pop r8
+                            //; pop r11
+                            //; pop r10
+                            //; pop r9
+                            //; pop r8
                         );
                         // RAX
                         DataOperand::Reg(0)
@@ -221,6 +226,26 @@ impl CodeGeneratorX64 {
             },
             ALUOperand::RegShift{op, shift_reg, reg} => panic!("{} not supported yet", op),
         }
+    }
+
+    // If the dest register is unmapped, this should be called.
+    fn writeback_dest<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize) {
+        let write_reg = wrap_write_reg::<M, T> as i64;
+        let reg = rd as i32;
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov rbx, QWORD write_reg
+            ; mov rsi, reg
+            //; push r8
+            //; push r9
+            //; push r10
+            //; push r11
+            ; call rbx
+            //; pop r11
+            //; pop r10
+            //; pop r9
+            //; pop r8
+        );
     }
 
     fn ret<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self) {
@@ -237,7 +262,7 @@ impl CodeGeneratorX64 {
             ; push r9
 
             ; mov rsi, 0
-            ; mov rdx, r8
+            ; mov edx, r8d
             ; call rbx
 
             ; mov rsi, 1
@@ -253,19 +278,19 @@ impl CodeGeneratorX64 {
             ; call rbx
 
             ; mov rsi, 4
-            ; mov rdx, r12
+            ; mov edx, r12d
             ; call rbx
 
             ; mov rsi, 5
-            ; mov rdx, r13
+            ; mov edx, r13d
             ; call rbx
 
             ; mov rsi, 6
-            ; mov rdx, r14
+            ; mov edx, r14d
             ; call rbx
 
             ; mov rsi, 13
-            ; mov rdx, r15
+            ; mov edx, r15d
             ; call rbx
 
             // Restore
@@ -286,12 +311,12 @@ impl CodeGeneratorX64 {
     fn mov<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
         let dest_reg = dest.unwrap_or(2); // 2 = RDX
-        let op = self.alu_operand::<M, T>(op2);
+        let op = self.alu_operand_2::<M, T>(op2);
         match op {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; mov Rq(dest_reg), DWORD i
+                    ; mov Rq(dest_reg), WORD i
                 );
             },
             DataOperand::Reg(r) => {
@@ -303,22 +328,7 @@ impl CodeGeneratorX64 {
         }
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            let write_reg = wrap_write_reg::<M, T> as i64;
-            let reg = rd as i32;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rbx, QWORD write_reg
-                ; mov rsi, reg
-                ; push r8
-                ; push r9
-                ; push r10
-                ; push r11
-                ; call rbx
-                ; pop r11
-                ; pop r10
-                ; pop r9
-                ; pop r8
-            );
+            self.writeback_dest::<M, T>(rd);
         }
     }
 
@@ -326,75 +336,33 @@ impl CodeGeneratorX64 {
         let dest = self.get_register(rd);
         let dest_reg = dest.unwrap_or(2); // 2 = RDX
 
-        let mut op2 = self.alu_operand::<M, T>(op2);
-
-        let op1 = self.get_register(rn);
-        let op1_reg = op1.unwrap_or_else(|| {
-            // If op2 is in RAX, we need to move it.
-            if op2.mov_to_rdx() {
-                dynasm!(self.assembler
-                    ; .arch x64
-                    ; mov rdx, rax
-                );
-            }
-            let read_reg = wrap_read_reg::<M, T> as i64;
-            let reg = rn as i32;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rbx, QWORD read_reg
-                ; mov rsi, reg
-                ; push r8
-                ; push r9
-                ; push r10
-                ; push r11
-                ; call rbx
-                ; pop r11
-                ; pop r10
-                ; pop r9
-                ; pop r8
-            );
-            0   // 0 = RAX
-        });
+        let mut op2 = self.alu_operand_2::<M, T>(op2);
+        let op1_reg = self.alu_operand_1::<M, T>(rn, &mut op2);
 
         if dest_reg != op1_reg {
             dynasm!(self.assembler
                 ; .arch x64
-                ; mov Rq(dest_reg), Rq(op1_reg)
+                ; mov Rd(dest_reg), Rd(op1_reg)
             );
         }
         match op2 {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; add Rq(dest_reg), DWORD i
+                    ; add Rd(dest_reg), WORD i
                 );
             },
             DataOperand::Reg(r) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; add Rq(dest_reg), Rq(r)
+                    ; add Rd(dest_reg), Rd(r)
                 );
             }
         }
 
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            let write_reg = wrap_write_reg::<M, T> as i64;
-            let reg = rd as i32;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rbx, QWORD write_reg
-                ; mov rsi, reg
-                ; push r8
-                ; push r9
-                ; push r10
-                ; push r11
-                ; call rbx
-                ; pop r11
-                ; pop r10
-                ; pop r9
-                ; pop r8
-            );
+            self.writeback_dest::<M, T>(rd);
         }
     }
 }
@@ -405,13 +373,17 @@ pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCor
 }
 
 pub unsafe extern "Rust" fn wrap_read_reg<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, reg: usize) -> u32 {
-    println!("Read reg {}", reg);
+    //println!("Read reg {}", reg);
     cpu.as_mut().unwrap().read_reg(reg)
 }
 
 pub unsafe extern "Rust" fn wrap_write_reg<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, reg: usize, data: u32) {
-    println!("Write {:X} to reg {}", data, reg);
+    //println!("Write {:X} to reg {}", data, reg);
     cpu.as_mut().unwrap().write_reg(reg, data);
+}
+
+pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) -> *mut u32 {
+    cpu.as_mut().unwrap().mut_regs().as_mut_ptr()
 }
 
 pub unsafe extern "Rust" fn wrap_clock<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, cycles: usize) {
