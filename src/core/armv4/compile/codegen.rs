@@ -33,20 +33,26 @@ pub struct DecodedInstruction {
     pub ret: bool,
 }
 
-pub struct CodeGeneratorX64 {
+pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     assembler: Assembler<X64Relocation>,
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
+
+    _unused_m: PhantomData<M>,
+    _unused_t: PhantomData<T>
 }
 
-impl CodeGeneratorX64 {
+impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     pub fn new() -> Self {
         Self {
             assembler: Assembler::new().unwrap(),
             label_table: std::collections::BTreeMap::new(),
+
+            _unused_m: PhantomData,
+            _unused_t: PhantomData
         }
     }
 
-    pub fn prelude<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self) {
+    pub fn prelude(&mut self) {
         let mut_regs = wrap_mut_regs::<M, T> as i64;
 
         dynasm!(self.assembler
@@ -79,12 +85,12 @@ impl CodeGeneratorX64 {
         );
     }
 
-    pub fn finish(self) -> Rc<JITObject> {
+    pub fn finish(self) -> Rc<JITObject<T>> {
         let buf = self.assembler.finalize().unwrap();
         Rc::new(JITObject::new(buf))
     }
 
-    pub fn codegen<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, instruction: &DecodedInstruction) {
+    pub fn codegen(&mut self, instruction: &DecodedInstruction) {
         if let Some(label_id) = instruction.label {
             let label = self.get_label(label_id);
             dynasm!(self.assembler
@@ -96,11 +102,11 @@ impl CodeGeneratorX64 {
         // TODO: conditional...
 
         if instruction.ret {
-            self.ret::<M, T>();
+            self.ret();
         } else {
             match &instruction.instruction.instr {
-                ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov::<M, T>(*rd, op2, *set_flags),
-                ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add::<M, T>(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov(*rd, op2, *set_flags),
+                ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add(*rd, *rn, op2, *set_flags),
                 _ => panic!("not supported"),
             }
         }
@@ -108,12 +114,6 @@ impl CodeGeneratorX64 {
         // TODO: conditional end
     }
 }
-
-pub unsafe extern "Rust" fn hello_world<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) {
-    println!("Hello world!");
-    //cpu.as_mut().unwrap().write_reg(reg, data);
-}
-
 
 enum DataOperand {
     Imm(i32),
@@ -134,7 +134,7 @@ impl DataOperand {
 }
 
 // Helpers
-impl CodeGeneratorX64 {
+impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     /// Dynamic label lookup
     fn get_label(&mut self, id: usize) -> DynamicLabel {
         if let Some(label) = self.label_table.get(&id) {
@@ -163,7 +163,7 @@ impl CodeGeneratorX64 {
     }
 
     // Code gen for first operand of ALU instructions (always a register).
-    fn alu_operand_1<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rn: usize, op2: &mut DataOperand) -> u8 {
+    fn alu_operand_1(&mut self, rn: usize, op2: &mut DataOperand) -> u8 {
         let op1 = self.get_register(rn);
         op1.unwrap_or_else(|| {
             // If op2 is in RAX, we need to move it.
@@ -195,7 +195,7 @@ impl CodeGeneratorX64 {
 
     // Code-gen for an ALU operand.
     // Returns the type of operand for the operation.
-    fn alu_operand_2<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, op: &ALUOperand) -> DataOperand {
+    fn alu_operand_2(&mut self, op: &ALUOperand) -> DataOperand {
         match op {
             ALUOperand::Normal(op) => match op {
                 ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
@@ -229,7 +229,7 @@ impl CodeGeneratorX64 {
     }
 
     // If the dest register is unmapped, this should be called.
-    fn writeback_dest<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize) {
+    fn writeback_dest(&mut self, rd: usize) {
         let write_reg = wrap_write_reg::<M, T> as i64;
         let reg = rd as i32;
         dynasm!(self.assembler
@@ -248,7 +248,7 @@ impl CodeGeneratorX64 {
         );
     }
 
-    fn ret<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self) {
+    fn ret(&mut self) {
         println!("Gen return!");
         let write_reg = wrap_write_reg::<M, T> as i64;
 
@@ -307,11 +307,11 @@ impl CodeGeneratorX64 {
 }
 
 // Instructions
-impl CodeGeneratorX64 {
-    fn mov<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
+impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+    fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
         let dest_reg = dest.unwrap_or(2); // 2 = RDX
-        let op = self.alu_operand_2::<M, T>(op2);
+        let op = self.alu_operand_2(op2);
         match op {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
@@ -328,16 +328,16 @@ impl CodeGeneratorX64 {
         }
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            self.writeback_dest::<M, T>(rd);
+            self.writeback_dest(rd);
         }
     }
 
-    fn add<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+    fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
         let dest_reg = dest.unwrap_or(2); // 2 = RDX
 
-        let mut op2 = self.alu_operand_2::<M, T>(op2);
-        let op1_reg = self.alu_operand_1::<M, T>(rn, &mut op2);
+        let mut op2 = self.alu_operand_2(op2);
+        let op1_reg = self.alu_operand_1(rn, &mut op2);
 
         if dest_reg != op1_reg {
             dynasm!(self.assembler
@@ -362,7 +362,7 @@ impl CodeGeneratorX64 {
 
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            self.writeback_dest::<M, T>(rd);
+            self.writeback_dest(rd);
         }
     }
 }

@@ -3,21 +3,18 @@
 use std::rc::Rc;
 use std::marker::PhantomData;
 
-use super::ARMCore;
-use crate::memory::Mem32;
-
 /// A subroutine to execute.
-pub enum Subroutine {
+pub enum Subroutine<T> {
     /// This subroutine has run n times before.
     Run(usize),
     /// This subroutine cannot be compiled.
     CannotCompile,
     /// This subroutine has been JIT-compiled.
-    Compiled(Rc<JITObject>),
+    Compiled(Rc<JITObject<T>>),
     //_Unused(Infallible, PhantomData<M>)
 }
 
-impl Clone for Subroutine {
+impl<T> Clone for Subroutine<T> {
     fn clone(&self) -> Self {
         use Subroutine::*;
         match self {
@@ -28,19 +25,23 @@ impl Clone for Subroutine {
     }
 }
 
-pub struct JITObject {
+pub struct JITObject<T> {
     routine: dynasmrt::ExecutableBuffer,
+
+    _unused_t: PhantomData<T>,
 }
 
-impl JITObject {
+impl<T> JITObject<T> {
     pub fn new(routine: dynasmrt::ExecutableBuffer) -> Self {
         Self {
             routine: routine,
+
+            _unused_t: PhantomData
         }
     }
 
     #[inline]
-    pub fn call<M: Mem32<Addr = u32>, T: ARMCore<M>>(&self, cpu: &mut T) {
+    pub fn call(&self, cpu: &mut T) {
         let routine: extern "Rust" fn(ts: &mut T) = unsafe { std::mem::transmute(self.routine.ptr(dynasmrt::AssemblyOffset(0))) };
         routine(cpu);
     }
