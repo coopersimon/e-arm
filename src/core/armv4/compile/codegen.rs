@@ -70,8 +70,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
             // Write regs
             ; push rdi
-            ; mov rbx, QWORD mut_regs
-            ; call rbx
+            ; mov rax, QWORD mut_regs
+            ; call rax
             ; pop rdi
 
             ; mov r8d, [rax]
@@ -120,19 +120,6 @@ enum DataOperand {
     Reg(u8)
 }
 
-impl DataOperand {
-    // If operand is in RAX, move into RDX and return true.
-    fn mov_to_rdx(&mut self) -> bool {
-        match self {
-            DataOperand::Reg(0) => {
-                *self = DataOperand::Reg(2);
-                true
-            },
-            _ => false
-        }
-    }
-}
-
 // Helpers
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     /// Dynamic label lookup
@@ -163,27 +150,20 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     // Code gen for first operand of ALU instructions (always a register).
-    fn alu_operand_1(&mut self, rn: usize, op2: &mut DataOperand) -> u8 {
+    fn alu_operand_1(&mut self, rn: usize) -> u8 {
         let op1 = self.get_register(rn);
         op1.unwrap_or_else(|| {
-            // If op2 is in RAX, we need to move it.
-            if op2.mov_to_rdx() {
-                dynasm!(self.assembler
-                    ; .arch x64
-                    ; mov edx, eax
-                );
-            }
             let read_reg = wrap_read_reg::<M, T> as i64;
             let reg = rn as i32;
             dynasm!(self.assembler
                 ; .arch x64
-                ; mov rbx, QWORD read_reg
+                ; mov rax, QWORD read_reg
                 ; mov rsi, reg
                 //; push r8
                 //; push r9
                 //; push r10
                 //; push r11
-                ; call rbx
+                ; call rax
                 //; pop r11
                 //; pop r10
                 //; pop r9
@@ -206,13 +186,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                         let reg = *r as i32;
                         dynasm!(self.assembler
                             ; .arch x64
-                            ; mov rbx, QWORD read_reg
+                            ; mov rax, QWORD read_reg
                             ; mov rsi, reg
                             //; push r8
                             //; push r9
                             //; push r10
                             //; push r11
-                            ; call rbx
+                            ; call rax
                             //; pop r11
                             //; pop r10
                             //; pop r9
@@ -229,18 +209,20 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     // If the dest register is unmapped, this should be called.
+    // The value should be in EBX.
     fn writeback_dest(&mut self, rd: usize) {
         let write_reg = wrap_write_reg::<M, T> as i64;
         let reg = rd as i32;
         dynasm!(self.assembler
             ; .arch x64
-            ; mov rbx, QWORD write_reg
+            ; mov rax, QWORD write_reg
             ; mov rsi, reg
+            ; mov edx, ebx
             //; push r8
             //; push r9
             //; push r10
             //; push r11
-            ; call rbx
+            ; call rax
             //; pop r11
             //; pop r10
             //; pop r9
@@ -250,54 +232,31 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn ret(&mut self) {
         println!("Gen return!");
-        let write_reg = wrap_write_reg::<M, T> as i64;
+        let mut_regs = wrap_mut_regs::<M, T> as i64;
 
         dynasm!(self.assembler
             ; .arch x64
             // Write back regs
-            ; mov rbx, QWORD write_reg
+            ; push rdi
+            ; mov rax, QWORD mut_regs
+            ; call rax
+            ; pop rdi
 
-            ; push r11
-            ; push r10
-            ; push r9
-
-            ; mov rsi, 0
-            ; mov edx, r8d
-            ; call rbx
-
-            ; mov rsi, 1
-            ; pop rdx
-            ; call rbx
-
-            ; mov rsi, 2
-            ; pop rdx
-            ; call rbx
-
-            ; mov rsi, 3
-            ; pop rdx
-            ; call rbx
-
-            ; mov rsi, 4
-            ; mov edx, r12d
-            ; call rbx
-
-            ; mov rsi, 5
-            ; mov edx, r13d
-            ; call rbx
-
-            ; mov rsi, 6
-            ; mov edx, r14d
-            ; call rbx
-
-            ; mov rsi, 13
-            ; mov edx, r15d
-            ; call rbx
+            ; mov [rax], r8d
+            ; mov [rax+4], r9d
+            ; mov [rax+8], r10d
+            ; mov [rax+12], r11d
+            ; mov [rax+16], r12d
+            ; mov [rax+20], r13d
+            ; mov [rax+24], r14d
+            ; mov [rax+52], r15d
 
             // Restore
             ; pop r15
             ; pop r14
             ; pop r13
             ; pop r12
+            ; pop rbx
             ; mov rsp, rbp
             ; pop rbp
 
@@ -310,7 +269,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
-        let dest_reg = dest.unwrap_or(2); // 2 = RDX
+        let dest_reg = dest.unwrap_or(3); // 3 = EBX
         let op = self.alu_operand_2(op2);
         match op {
             DataOperand::Imm(i) => {
@@ -334,17 +293,17 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_register(rd);
-        let dest_reg = dest.unwrap_or(2); // 2 = RDX
+        let dest_reg = dest.unwrap_or(3); // 3 = EBX
 
-        let mut op2 = self.alu_operand_2(op2);
-        let op1_reg = self.alu_operand_1(rn, &mut op2);
-
+        let op1_reg = self.alu_operand_1(rn);
         if dest_reg != op1_reg {
             dynasm!(self.assembler
                 ; .arch x64
                 ; mov Rd(dest_reg), Rd(op1_reg)
             );
         }
+
+        let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
