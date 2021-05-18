@@ -84,6 +84,29 @@ fn test_add_reg() {
 }
 
 #[test]
+fn test_add_reg_2() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE080_1001,    // ADD R1, R0, R1
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 234);
+            cpu.write_reg(1, 1000);
+            routine.call(&mut cpu);
+            assert_eq!(cpu.read_reg(0), 234);
+            assert_eq!(cpu.read_reg(1), 1234);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
 fn test_multi_add() {
     let mut mem = TestMem {
         data: vec![
@@ -128,6 +151,39 @@ fn test_multi_add() {
             assert_eq!(cpu.read_reg(11), 0xDDDD);
 
             assert_eq!(cpu.read_reg(12), 0x2235_46AB);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_add_shift() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE080_B501,    // ADD R11, R0, (R1 LSL #10)
+            0xE08B_2332,    // ADD R2, R11, (R2 LSR R3)
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0x1234);
+            cpu.write_reg(1, 0x11);
+            cpu.write_reg(2, 0x9999);
+            cpu.write_reg(3, 4);
+            cpu.write_reg(4, 0x5678);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(0), 0x1234);
+            assert_eq!(cpu.read_reg(1), 0x11);
+            assert_eq!(cpu.read_reg(3), 4);
+            assert_eq!(cpu.read_reg(4), 0x5678);
+            assert_eq!(cpu.read_reg(11), 0x5634);
+            assert_eq!(cpu.read_reg(2), 0x5FCD);
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }

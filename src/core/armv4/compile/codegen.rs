@@ -13,7 +13,8 @@ use crate::{
         armv4::instructions::{
             ARMv4InstructionType,
             ALUOperand,
-            ShiftOperand
+            ShiftOperand,
+            RegShiftOperand
         },
         JITObject
     }
@@ -135,7 +136,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     /// Register mapping.
     /// If None is returned the register has to be fetched from memory.
-    fn get_register(&self, reg: usize) -> Option<u8> {
+    fn get_mapped_register(&self, reg: usize) -> Option<u8> {
         match reg {
             0 => Some(8),
             1 => Some(9),
@@ -149,16 +150,18 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
-    // Code gen for first operand of ALU instructions (always a register).
-    fn alu_operand_1(&mut self, rn: usize) -> u8 {
-        let op1 = self.get_register(rn);
+    /// Get the register number to use.
+    /// If it is mapped, it will return the mapped value.
+    /// Otherwise it will generate code to load the register into EAX and return that.
+    fn get_register(&mut self, reg: usize) -> u8 {
+        let op1 = self.get_mapped_register(reg);
         op1.unwrap_or_else(|| {
             let read_reg = wrap_read_reg::<M, T> as i64;
-            let reg = rn as i32;
+            let reg_num = reg as i32;
             dynasm!(self.assembler
                 ; .arch x64
                 ; mov rax, QWORD read_reg
-                ; mov rsi, reg
+                ; mov rsi, reg_num
                 //; push r8
                 //; push r9
                 //; push r10
@@ -169,7 +172,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 //; pop r9
                 //; pop r8
             );
-            0   // 0 = RAX
+            0   // 0 = EAX
         })
     }
 
@@ -179,38 +182,97 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         match op {
             ALUOperand::Normal(op) => match op {
                 ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
-                ShiftOperand::Register(r) => match self.get_register(*r) {
-                    Some(reg) => DataOperand::Reg(reg),
-                    None => {
-                        let read_reg = wrap_read_reg::<M, T> as i64;
-                        let reg = *r as i32;
+                ShiftOperand::Register(r) => DataOperand::Reg(self.get_register(*r)),
+                ShiftOperand::LSL{shift_amount, reg} => {
+                    let reg = self.get_register(*reg);
+                    let shift_val = *shift_amount as i8;
+                    if reg != 0 {
                         dynasm!(self.assembler
                             ; .arch x64
-                            ; mov rax, QWORD read_reg
-                            ; mov rsi, reg
-                            //; push r8
-                            //; push r9
-                            //; push r10
-                            //; push r11
-                            ; call rax
-                            //; pop r11
-                            //; pop r10
-                            //; pop r9
-                            //; pop r8
+                            ; mov eax, Rd(reg)
                         );
-                        // RAX
-                        DataOperand::Reg(0)
                     }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; shl eax, shift_val
+                    );
+                    DataOperand::Reg(0) // EAX
                 },
                 _ => panic!("{} not supported yet", op),
             },
-            ALUOperand::RegShift{op, shift_reg, reg} => panic!("{} not supported yet", op),
+            ALUOperand::RegShift{op, shift_reg, reg} => {
+                let shift_reg = self.get_register(*shift_reg);
+                if shift_reg == 0 {
+                    // We need to use register A for the data register.
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; push rax
+                    );
+                }
+                let data_reg = self.get_register(*reg);
+                if data_reg != 0 {
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; mov eax, Rd(data_reg)
+                    );
+                }
+                if shift_reg == 0 {
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; pop rcx
+                    );
+                } else {
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; mov ecx, Rd(shift_reg)
+                    );
+                }
+                match op {
+                    RegShiftOperand::LSL => {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; shl eax, cl
+                        );
+                    },
+                    RegShiftOperand::LSR => {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; shr eax, cl
+                        );
+                    },
+                    RegShiftOperand::ASR => {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; sar eax, cl
+                        );
+                    },
+                    RegShiftOperand::ROR => {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; ror eax, cl
+                        );
+                    },
+                }
+                DataOperand::Reg(0) // EAX
+            }
         }
     }
 
-    // If the dest register is unmapped, this should be called.
+    // Write the value back to the dest register.
     // The value should be in EBX.
     fn writeback_dest(&mut self, rd: usize) {
+        match self.get_mapped_register(rd) {
+            Some(reg) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov Rd(reg), ebx
+                );
+            },
+            None => self.writeback_unmapped_dest(rd),
+        }
+    }
+
+    fn writeback_unmapped_dest(&mut self, rd: usize) {
         let write_reg = wrap_write_reg::<M, T> as i64;
         let reg = rd as i32;
         dynasm!(self.assembler
@@ -268,61 +330,53 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 // Instructions
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
-        let dest = self.get_register(rd);
+        let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(3); // 3 = EBX
         let op = self.alu_operand_2(op2);
         match op {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; mov Rq(dest_reg), WORD i
+                    ; mov Rd(dest_reg), WORD i
                 );
             },
             DataOperand::Reg(r) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; mov Rq(dest_reg), Rq(r)
+                    ; mov Rd(dest_reg), Rd(r)
                 );
             }
         }
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            self.writeback_dest(rd);
+            self.writeback_unmapped_dest(rd);
         }
     }
 
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        let dest = self.get_register(rd);
-        let dest_reg = dest.unwrap_or(3); // 3 = EBX
-
-        let op1_reg = self.alu_operand_1(rn);
-        if dest_reg != op1_reg {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov Rd(dest_reg), Rd(op1_reg)
-            );
-        }
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
 
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; add Rd(dest_reg), WORD i
+                    ; add ebx, WORD i
                 );
             },
             DataOperand::Reg(r) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; add Rd(dest_reg), Rd(r)
+                    ; add ebx, Rd(r)
                 );
             }
         }
 
-        // Unmapped dest: we need to write back.
-        if dest.is_none() {
-            self.writeback_dest(rd);
-        }
+        self.writeback_dest(rd);
     }
 }
 
