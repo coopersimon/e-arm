@@ -198,7 +198,93 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     );
                     DataOperand::Reg(0) // EAX
                 },
-                _ => panic!("{} not supported yet", op),
+                ShiftOperand::LSR{shift_amount, reg} => {
+                    let reg = self.get_register(*reg);
+                    let shift_val = *shift_amount as i8;
+                    if reg != 0 {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; mov eax, Rd(reg)
+                        );
+                    }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; shr eax, shift_val
+                    );
+                    DataOperand::Reg(0) // EAX
+                },
+                ShiftOperand::ASR{shift_amount, reg} => {
+                    let reg = self.get_register(*reg);
+                    let shift_val = *shift_amount as i8;
+                    if reg != 0 {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; mov eax, Rd(reg)
+                        );
+                    }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; sar eax, shift_val
+                    );
+                    DataOperand::Reg(0) // EAX
+                },
+                ShiftOperand::ROR{shift_amount, reg} => {
+                    let reg = self.get_register(*reg);
+                    let shift_val = *shift_amount as i8;
+                    if reg != 0 {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; mov eax, Rd(reg)
+                        );
+                    }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; ror eax, shift_val
+                    );
+                    DataOperand::Reg(0) // EAX
+                },
+                ShiftOperand::LSR32{reg} => {
+                    let reg = self.get_register(*reg);
+                    if reg != 0 {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; mov eax, Rd(reg)
+                        );
+                    }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; shr eax, 32
+                    );
+                    DataOperand::Reg(0) // EAX
+                },
+                ShiftOperand::ASR32{reg} => {
+                    let reg = self.get_register(*reg);
+                    if reg != 0 {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; mov eax, Rd(reg)
+                        );
+                    }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; sar eax, 32
+                    );
+                    DataOperand::Reg(0) // EAX
+                },
+                ShiftOperand::RRX{reg} => {
+                    let reg = self.get_register(*reg);
+                    if reg != 0 {
+                        dynasm!(self.assembler
+                            ; .arch x64
+                            ; mov eax, Rd(reg)
+                        );
+                    }
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; rcr eax, 1
+                    );
+                    DataOperand::Reg(0) // EAX
+                },
             },
             ALUOperand::RegShift{op, shift_reg, reg} => {
                 let shift_reg = self.get_register(*shift_reg);
