@@ -253,7 +253,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     }
                     dynasm!(self.assembler
                         ; .arch x64
-                        ; shr eax, 32
+                        ; shl eax, 1    // Fill carry
+                        ; mov eax, 0
                     );
                     DataOperand::Reg(0) // EAX
                 },
@@ -267,7 +268,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     }
                     dynasm!(self.assembler
                         ; .arch x64
-                        ; sar eax, 32
+                        ; sar eax, 31
                     );
                     DataOperand::Reg(0) // EAX
                 },
@@ -385,10 +386,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         dynasm!(self.assembler
             ; .arch x64
             // Write back regs
-            ; push rdi
             ; mov rax, QWORD mut_regs
             ; call rax
-            ; pop rdi
 
             ; mov [rax], r8d
             ; mov [rax+4], r9d
