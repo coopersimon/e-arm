@@ -108,6 +108,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             match &instruction.instruction.instr {
                 ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov(*rd, op2, *set_flags),
                 ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::SUB{ rd, rn, op2, set_flags } => self.sub(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::RSB{ rd, rn, op2, set_flags } => self.rsb(*rd, *rn, op2, *set_flags),
                 _ => panic!("not supported"),
             }
         }
@@ -460,6 +462,59 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 );
             }
         }
+
+        self.writeback_dest(rd);
+    }
+
+    fn sub(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
+
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; sub ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; sub ebx, Rd(r)
+                );
+            }
+        }
+
+        self.writeback_dest(rd);
+    }
+
+    fn rsb(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov ebx, Rd(r)
+                );
+            }
+        }
+
+        let op1_reg = self.get_register(rn);
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; sub ebx, Rd(op1_reg)
+        );
 
         self.writeback_dest(rd);
     }
