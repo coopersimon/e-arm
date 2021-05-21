@@ -26,8 +26,6 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     assembler: Assembler<X64Relocation>,
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
 
-    flags_on_stack: bool,
-
     _unused_m: PhantomData<M>,
     _unused_t: PhantomData<T>
 }
@@ -37,8 +35,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         Self {
             assembler: Assembler::new().unwrap(),
             label_table: std::collections::BTreeMap::new(),
-
-            flags_on_stack: false,
 
             _unused_m: PhantomData,
             _unused_t: PhantomData
@@ -75,6 +71,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov r13d, [rax+20]
             ; mov r14d, [rax+24]
             ; mov r15d, [rax+52]
+
+            // TODO: flags?
         );
     }
 
@@ -138,35 +136,20 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
-    /// Store or restore flags
-    fn stack_flags(&mut self, pop: bool) {
-        if pop {
-            self.pop_flags();
-        } else {
-            self.push_flags();
-        }
-    }
-
-    /// Store the flags (if necessary)
+    /// Store the flags
     fn push_flags(&mut self) {
-        if !self.flags_on_stack {
-            self.flags_on_stack = true;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; pushf
-            );
-        }
+        dynasm!(self.assembler
+            ; .arch x64
+            ; pushf
+        );
     }
 
-    /// Restore the flags (if necessary)
+    /// Restore the flags
     fn pop_flags(&mut self) {
-        if self.flags_on_stack {
-            self.flags_on_stack = false;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; popf
-            );
-        }
+        dynasm!(self.assembler
+            ; .arch x64
+            ; popf
+        );
     }
 
     /// Generate condition branch.
@@ -175,7 +158,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ARMCondition::AL => None,
             other => {
                 let skip_label = self.assembler.new_dynamic_label();
-                self.pop_flags();
                 // Match to the inverse of the condition.
                 // Then if the condition isn't met, we skip over it.
                 match other {
@@ -276,7 +258,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 //; push r9
                 //; push r10
                 //; push r11
+                ; pushf
                 ; call rax
+                ; popf
                 //; pop r11
                 //; pop r10
                 //; pop r9
@@ -481,7 +465,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             //; push r9
             //; push r10
             //; push r11
+            ; pushf
             ; call rax
+            ; popf
             //; pop r11
             //; pop r10
             //; pop r9
@@ -493,10 +479,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         println!("Gen return!");
         let mut_regs = wrap_mut_regs::<M, T> as i64;
 
-        self.pop_flags();
-
         dynasm!(self.assembler
             ; .arch x64
+            // TODO: write back flags?
+
             // Write back regs
             ; mov rax, QWORD mut_regs
             ; call rax
@@ -527,7 +513,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 // Instructions
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(3); // 3 = EBX
         let op = self.alu_operand_2(op2);
@@ -559,7 +544,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn and(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
+        if !set_flags {
+            self.push_flags();
+        }
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -583,10 +570,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         self.writeback_dest(rd);
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 
     fn eor(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
+        if !set_flags {
+            self.push_flags();
+        }
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -610,10 +602,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         self.writeback_dest(rd);
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 
     fn orr(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
+        if !set_flags {
+            self.push_flags();
+        }
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -637,10 +634,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         self.writeback_dest(rd);
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
+        if !set_flags {
+            self.push_flags();
+        }
         let op1_reg = self.get_register(rn);
         // TODO: if rd == rn & op1_reg is mapped, we can use it directly instead of ebx
         // (This will help with thumb code)
@@ -666,10 +668,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         self.writeback_dest(rd);
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 
     fn sub(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
+        if !set_flags {
+            self.push_flags();
+        }
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -693,10 +700,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         self.writeback_dest(rd);
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 
     fn rsb(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.stack_flags(set_flags);
+        if !set_flags {
+            self.push_flags();
+        }
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => {
@@ -721,6 +733,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         );
 
         self.writeback_dest(rd);
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 }
 

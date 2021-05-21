@@ -331,7 +331,7 @@ fn test_cond_eq() {
         data: vec![
             0xE3B0_0000,    // MOVS R0, #0
             0x03B0_1001,    // MOVSEQ R1, #1
-            //0x03A0_2002,    // MOVEQ R2, #2
+            0x03A0_2002,    // MOVEQ R2, #2
             0xE1A0_F00E,    // MOV R15, R14
         ]
     };
