@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::{
     Mem32,
-    core::{ARMCore, JITObject, CompilerError}
+    core::{ARMCore, JITObject, CompilerError, ARMv4Instruction}
 };
 
 /// An object to compile ARM code into the host platform's machine code.
@@ -33,6 +33,21 @@ impl ARMv4Compiler {
         Ok(assembler.finish())
     }
 }
+
+/// An instruction which is decoded, with meta-data, ready for code generation.
+pub struct DecodedInstruction {
+    /// The instruction itself.
+    pub instruction: ARMv4Instruction,
+    /// Number of cycles needed to fetch the instruction.
+    pub fetch_cycles: usize,
+    /// If this instruction needs a label emitted before it.
+    pub label: Option<usize>,
+    /// If this instruction branches somewhere.
+    pub branch_to: Option<usize>,
+    /// If this instruction should be treated as a return.
+    pub ret: bool,
+}
+
 
 /*pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(ts: *mut T, dest: u32) {
     ts.as_mut().unwrap().call_subroutine(dest);

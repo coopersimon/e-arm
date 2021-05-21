@@ -189,7 +189,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 pub type SwiHook<M> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
 
 /// ARM condition codes.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ARMCondition {
     EQ, // Z set
     NE, // Z clear

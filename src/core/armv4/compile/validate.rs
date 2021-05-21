@@ -8,10 +8,10 @@ use crate::{
     core::{ARMCore, CompilerError, ReturnLocation, constants}
 };
 use super::{
-    codegen::DecodedInstruction,
+    DecodedInstruction,
     super::{
         instructions::{ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
-        decode::*
+        decode::*,
     }
 };
 
@@ -67,12 +67,13 @@ impl Validator {
             let (i, cycles) = mem.load_word(MemCycleType::N, self.current_addr);
             let decoded = decode_arm_v4(i);
             println!("Encountered i: {}", decoded);
+
             let mut instruction = DecodedInstruction {
-                instruction: decoded.clone(),
-                fetch_cycles: cycles,
-                label: None,
-                branch_to: None,
-                ret: false,
+                instruction:    decoded.clone(),
+                fetch_cycles:   cycles,
+                label:          None,
+                branch_to:      None,
+                ret:            false,
             };
             // Take certain actions depending on the instruction...
             match &decoded.instr {

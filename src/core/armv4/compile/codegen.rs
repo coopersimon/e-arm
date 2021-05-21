@@ -8,7 +8,7 @@ use dynasmrt::{
 use std::rc::Rc;
 use std::marker::PhantomData;
 use crate::{
-    Mem32, ARMCore, ARMv4Instruction,
+    Mem32, ARMCore,
     core::{
         armv4::instructions::{
             ARMv4InstructionType,
@@ -16,27 +16,17 @@ use crate::{
             ShiftOperand,
             RegShiftOperand
         },
+        ARMCondition,
         JITObject
     }
 };
-
-/// An instruction which is decoded, with meta-data, ready for code generation.
-pub struct DecodedInstruction {
-    /// The instruction itself.
-    pub instruction: ARMv4Instruction,
-    /// Number of cycles needed to fetch the instruction.
-    pub fetch_cycles: usize,
-    /// If this instruction needs a label emitted before it.
-    pub label: Option<usize>,
-    /// If this instruction branches somewhere.
-    pub branch_to: Option<usize>,
-    /// If this instruction should be treated as a return.
-    pub ret: bool,
-}
+use super::DecodedInstruction;
 
 pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     assembler: Assembler<X64Relocation>,
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
+
+    flags_on_stack: bool,
 
     _unused_m: PhantomData<M>,
     _unused_t: PhantomData<T>
@@ -47,6 +37,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         Self {
             assembler: Assembler::new().unwrap(),
             label_table: std::collections::BTreeMap::new(),
+
+            flags_on_stack: false,
 
             _unused_m: PhantomData,
             _unused_t: PhantomData
@@ -100,7 +92,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             );
         }
 
-        // TODO: conditional...
+        let skip_label = self.codegen_cond(instruction.instruction.cond);
 
         if instruction.ret {
             self.ret();
@@ -119,7 +111,12 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             }
         }
 
-        // TODO: conditional end
+        if let Some(label) = skip_label {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; =>label
+            );
+        }
     }
 }
 
@@ -138,6 +135,112 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             let label = self.assembler.new_dynamic_label();
             self.label_table.insert(id, label);
             label
+        }
+    }
+
+    /// Store or restore flags
+    fn stack_flags(&mut self, pop: bool) {
+        if pop {
+            self.pop_flags();
+        } else {
+            self.push_flags();
+        }
+    }
+
+    /// Store the flags (if necessary)
+    fn push_flags(&mut self) {
+        if !self.flags_on_stack {
+            self.flags_on_stack = true;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; pushf
+            );
+        }
+    }
+
+    /// Restore the flags (if necessary)
+    fn pop_flags(&mut self) {
+        if self.flags_on_stack {
+            self.flags_on_stack = false;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; popf
+            );
+        }
+    }
+
+    /// Generate condition branch.
+    fn codegen_cond(&mut self, condition: ARMCondition) -> Option<DynamicLabel> {
+        match condition {
+            ARMCondition::AL => None,
+            other => {
+                let skip_label = self.assembler.new_dynamic_label();
+                self.pop_flags();
+                // Match to the inverse of the condition.
+                // Then if the condition isn't met, we skip over it.
+                match other {
+                    ARMCondition::EQ => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jne =>skip_label
+                    ),
+                    ARMCondition::NE => dynasm!(self.assembler
+                        ; .arch x64
+                        ; je =>skip_label
+                    ),
+                    ARMCondition::CS => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jnc =>skip_label
+                    ),
+                    ARMCondition::CC => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jc =>skip_label
+                    ),
+                    ARMCondition::MI => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jns =>skip_label
+                    ),
+                    ARMCondition::PL => dynasm!(self.assembler
+                        ; .arch x64
+                        ; js =>skip_label
+                    ),
+                    ARMCondition::VS => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jno =>skip_label
+                    ),
+                    ARMCondition::VC => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jo =>skip_label
+                    ),
+                    // Not sure about this one...
+                    ARMCondition::HI => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jna =>skip_label
+                    ),
+                    // ...or this one
+                    ARMCondition::LS => dynasm!(self.assembler
+                        ; .arch x64
+                        ; ja =>skip_label
+                    ),
+                    ARMCondition::GE => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jl =>skip_label
+                    ),
+                    ARMCondition::LT => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jge =>skip_label
+                    ),
+                    ARMCondition::GT => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jle =>skip_label
+                    ),
+                    ARMCondition::LE => dynasm!(self.assembler
+                        ; .arch x64
+                        ; jg =>skip_label
+                    ),
+                    ARMCondition::AL => unreachable!(),
+                }
+                Some(skip_label)
+            }
         }
     }
 
@@ -390,6 +493,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         println!("Gen return!");
         let mut_regs = wrap_mut_regs::<M, T> as i64;
 
+        self.pop_flags();
+
         dynasm!(self.assembler
             ; .arch x64
             // Write back regs
@@ -422,6 +527,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 // Instructions
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(3); // 3 = EBX
         let op = self.alu_operand_2(op2);
@@ -439,6 +545,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 );
             }
         }
+        // x86 MOV doesn't set flags by itself
+        if set_flags {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; cmp Rd(dest_reg), 0
+            );
+        }
         // Unmapped dest: we need to write back.
         if dest.is_none() {
             self.writeback_unmapped_dest(rd);
@@ -446,6 +559,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn and(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -472,6 +586,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn eor(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -498,6 +613,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn orr(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -524,6 +640,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let op1_reg = self.get_register(rn);
         // TODO: if rd == rn & op1_reg is mapped, we can use it directly instead of ebx
         // (This will help with thumb code)
@@ -552,6 +669,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn sub(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let op1_reg = self.get_register(rn);
         dynasm!(self.assembler
             ; .arch x64
@@ -578,6 +696,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn rsb(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        self.stack_flags(set_flags);
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => {
