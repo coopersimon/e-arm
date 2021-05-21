@@ -351,3 +351,33 @@ fn test_cond_eq() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_cond_add() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE090_2001,    // ADDS R2, R0, R1
+            0x23A0_A00A,    // MOVCS R10, #10
+            0x33A0_B00B,    // MOVCC R11, #11
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0xFFFF_FFFF);
+            cpu.write_reg(1, 2);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(0), 0xFFFF_FFFF);
+            assert_eq!(cpu.read_reg(1), 2);
+            assert_eq!(cpu.read_reg(2), 1);
+            assert_eq!(cpu.read_reg(10), 10);
+            assert_eq!(cpu.read_reg(11), 0);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}

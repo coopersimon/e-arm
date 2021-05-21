@@ -534,7 +534,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if set_flags {
             dynasm!(self.assembler
                 ; .arch x64
-                ; cmp Rd(dest_reg), 0
+                ; test Rd(dest_reg), 0
             );
         }
         // Unmapped dest: we need to write back.
