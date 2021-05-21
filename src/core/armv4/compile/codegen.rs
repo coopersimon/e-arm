@@ -2,7 +2,7 @@
 use dynasmrt::{
     dynasm, DynasmApi, DynasmLabelApi, Assembler, DynamicLabel,
     x64::{
-        X64Relocation, Rq
+        X64Relocation
     }
 };
 use std::rc::Rc;
@@ -107,9 +107,14 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         } else {
             match &instruction.instruction.instr {
                 ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov(*rd, op2, *set_flags),
+                ARMv4InstructionType::AND{ rd, rn, op2, set_flags } => self.and(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::EOR{ rd, rn, op2, set_flags } => self.eor(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::ORR{ rd, rn, op2, set_flags } => self.orr(*rd, *rn, op2, *set_flags),
+
                 ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add(*rd, *rn, op2, *set_flags),
                 ARMv4InstructionType::SUB{ rd, rn, op2, set_flags } => self.sub(*rd, *rn, op2, *set_flags),
                 ARMv4InstructionType::RSB{ rd, rn, op2, set_flags } => self.rsb(*rd, *rn, op2, *set_flags),
+
                 _ => panic!("not supported"),
             }
         }
@@ -440,8 +445,88 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
+    fn and(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
+
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; and ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; and ebx, Rd(r)
+                );
+            }
+        }
+
+        self.writeback_dest(rd);
+    }
+
+    fn eor(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
+
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; xor ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; xor ebx, Rd(r)
+                );
+            }
+        }
+
+        self.writeback_dest(rd);
+    }
+
+    fn orr(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
+
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; or ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; or ebx, Rd(r)
+                );
+            }
+        }
+
+        self.writeback_dest(rd);
+    }
+
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
         let op1_reg = self.get_register(rn);
+        // TODO: if rd == rn & op1_reg is mapped, we can use it directly instead of ebx
+        // (This will help with thumb code)
         dynasm!(self.assembler
             ; .arch x64
             ; mov ebx, Rd(op1_reg)

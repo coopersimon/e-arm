@@ -293,3 +293,34 @@ fn test_sub_rsb() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_logic() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE000_2001,    // AND R2, R0, R1
+            0xE020_3001,    // EOR R3, R0, R1
+            0xE180_4001,    // ORR R4, R0, R1
+            //0xE269_2FFA,    // AND R5, R2, R3
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0x1515_E0E0);
+            cpu.write_reg(1, 0x2424_7777);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(0), 0x1515_E0E0);
+            assert_eq!(cpu.read_reg(1), 0x2424_7777);
+            assert_eq!(cpu.read_reg(2), 0x0404_6060);
+            assert_eq!(cpu.read_reg(3), 0x3131_9797);
+            assert_eq!(cpu.read_reg(4), 0x3535_F7F7);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
