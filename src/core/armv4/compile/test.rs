@@ -353,7 +353,7 @@ fn test_cond_eq() {
 }
 
 #[test]
-fn test_cond_add() {
+fn test_cond_carry() {
     let mut mem = TestMem {
         data: vec![
             0xE090_2001,    // ADDS R2, R0, R1
@@ -377,6 +377,70 @@ fn test_cond_add() {
             assert_eq!(cpu.read_reg(2), 1);
             assert_eq!(cpu.read_reg(10), 10);
             assert_eq!(cpu.read_reg(11), 0);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_long_add() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE090_8004,    // ADDS R8, R0, R4
+            0xE0A1_9005,    // ADC R9, R1, R5
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0x8888_8888);
+            cpu.write_reg(1, 0x2);
+            cpu.write_reg(4, 0x9999_9999);
+            cpu.write_reg(5, 0x1);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(0), 0x8888_8888);
+            assert_eq!(cpu.read_reg(1), 0x2);
+            assert_eq!(cpu.read_reg(4), 0x9999_9999);
+            assert_eq!(cpu.read_reg(5), 0x1);
+            assert_eq!(cpu.read_reg(8), 0x2222_2221);
+            assert_eq!(cpu.read_reg(9), 0x4);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_long_sub() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE050_8004,    // SUBS R8, R0, R4
+            0xE0C1_9005,    // SBC R9, R1, R5
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0x8888_8888);
+            cpu.write_reg(1, 0x2);
+            cpu.write_reg(4, 0x9999_9999);
+            cpu.write_reg(5, 0x1);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(0), 0x8888_8888);
+            assert_eq!(cpu.read_reg(1), 0x2);
+            assert_eq!(cpu.read_reg(4), 0x9999_9999);
+            assert_eq!(cpu.read_reg(5), 0x1);
+            assert_eq!(cpu.read_reg(8), 0xEEEE_EEEF);
+            assert_eq!(cpu.read_reg(9), 0x0);
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }
