@@ -110,6 +110,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::SBC{ rd, rn, op2, set_flags } => self.sbc(*rd, *rn, op2, *set_flags),
                 ARMv4InstructionType::RSC{ rd, rn, op2, set_flags } => self.rsc(*rd, *rn, op2, *set_flags),
 
+                ARMv4InstructionType::TST{ rn, op2 } => self.tst(*rn, op2),
+                ARMv4InstructionType::TEQ{ rn, op2 } => self.teq(*rn, op2),
+                ARMv4InstructionType::CMP{ rn, op2 } => self.cmp(*rn, op2),
+                ARMv4InstructionType::CMN{ rn, op2 } => self.cmn(*rn, op2),
+
                 _ => panic!("not supported"),
             }
         }
@@ -838,6 +843,90 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.writeback_dest(rd);
         if !set_flags {
             self.pop_flags();
+        }
+    }
+
+    fn tst(&mut self, rn: usize, op2: &ALUOperand) {
+        let op1_reg = self.get_register(rn);
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; test Rd(op1_reg), WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; test Rd(op1_reg), Rd(r)
+                );
+            }
+        }
+    }
+
+    fn teq(&mut self, rn: usize, op2: &ALUOperand) {
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; xor ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; xor ebx, Rd(r)
+                );
+            }
+        }
+    }
+
+    fn cmp(&mut self, rn: usize, op2: &ALUOperand) {
+        let op1_reg = self.get_register(rn);
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; cmp Rd(op1_reg), WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; cmp Rd(op1_reg), Rd(r)
+                );
+            }
+        }
+    }
+
+    fn cmn(&mut self, rn: usize, op2: &ALUOperand) {
+        let op1_reg = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov ebx, Rd(op1_reg)
+        );
+        let op2 = self.alu_operand_2(op2);
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; add ebx, WORD i
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; add ebx, Rd(r)
+                );
+            }
         }
     }
 }
