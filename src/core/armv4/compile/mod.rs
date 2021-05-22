@@ -20,15 +20,16 @@ impl ARMv4Compiler {
     }
 
     /// Try and compile a subroutine.
-    pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, mut addr: u32, mem: &mut M) -> Result<Rc<JITObject<T>>, CompilerError> {
+    pub fn compile<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<T>>, CompilerError> {
         let mut validator = validate::Validator::new(addr);
         let instructions = validator.decode_and_validate::<M, T>(mem)?;
 
+        let mut pc_val = addr + 8;  // PC is always 2 instructions ahead...
         let mut assembler = codegen::CodeGeneratorX64::new();
         assembler.prelude();
         for i in instructions {
-            assembler.codegen(&i, addr);
-            addr += 4;
+            assembler.codegen(&i, pc_val);
+            pc_val += 4;
         }
 
         Ok(assembler.finish())
