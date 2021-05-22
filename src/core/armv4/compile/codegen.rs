@@ -98,30 +98,39 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             );
         }
 
+        // Handle internal branch.
+        if let Some(label_id) = instruction.branch_to {
+            let label = self.get_label(label_id);
+            self.b(instruction.instruction.cond, label);
+            return;
+        }
+
         let skip_label = self.codegen_cond(instruction.instruction.cond);
 
         if instruction.ret {
             self.ret();
         } else {
             match &instruction.instruction.instr {
-                ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov(*rd, op2, *set_flags),
-                ARMv4InstructionType::MVN{ rd, op2, set_flags } => self.mvn(*rd, op2, *set_flags),
-                ARMv4InstructionType::AND{ rd, rn, op2, set_flags } => self.and(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::EOR{ rd, rn, op2, set_flags } => self.eor(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::ORR{ rd, rn, op2, set_flags } => self.orr(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::BIC{ rd, rn, op2, set_flags } => self.bic(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::MOV{rd, op2, set_flags} => self.mov(*rd, op2, *set_flags),
+                ARMv4InstructionType::MVN{rd, op2, set_flags} => self.mvn(*rd, op2, *set_flags),
+                ARMv4InstructionType::AND{rd, rn, op2, set_flags} => self.and(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::EOR{rd, rn, op2, set_flags} => self.eor(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::ORR{rd, rn, op2, set_flags} => self.orr(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::BIC{rd, rn, op2, set_flags} => self.bic(*rd, *rn, op2, *set_flags),
 
-                ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::SUB{ rd, rn, op2, set_flags } => self.sub(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::RSB{ rd, rn, op2, set_flags } => self.rsb(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::ADC{ rd, rn, op2, set_flags } => self.adc(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::SBC{ rd, rn, op2, set_flags } => self.sbc(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::RSC{ rd, rn, op2, set_flags } => self.rsc(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::ADD{rd, rn, op2, set_flags} => self.add(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::SUB{rd, rn, op2, set_flags} => self.sub(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::RSB{rd, rn, op2, set_flags} => self.rsb(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::ADC{rd, rn, op2, set_flags} => self.adc(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::SBC{rd, rn, op2, set_flags} => self.sbc(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::RSC{rd, rn, op2, set_flags} => self.rsc(*rd, *rn, op2, *set_flags),
 
-                ARMv4InstructionType::TST{ rn, op2 } => self.tst(*rn, op2),
-                ARMv4InstructionType::TEQ{ rn, op2 } => self.teq(*rn, op2),
-                ARMv4InstructionType::CMP{ rn, op2 } => self.cmp(*rn, op2),
-                ARMv4InstructionType::CMN{ rn, op2 } => self.cmn(*rn, op2),
+                ARMv4InstructionType::TST{rn, op2} => self.tst(*rn, op2),
+                ARMv4InstructionType::TEQ{rn, op2} => self.teq(*rn, op2),
+                ARMv4InstructionType::CMP{rn, op2} => self.cmp(*rn, op2),
+                ARMv4InstructionType::CMN{rn, op2} => self.cmn(*rn, op2),
+
+                ARMv4InstructionType::B{..} => unreachable!("this should have been generated earlier..."),
 
                 _ => panic!("not supported"),
             }
@@ -902,6 +911,73 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; .arch x64
                 ; add ebx, Rd(r)
             )
+        }
+    }
+
+    fn b(&mut self, cond: ARMCondition, label: DynamicLabel) {
+        match cond {
+            ARMCondition::EQ => dynasm!(self.assembler
+                ; .arch x64
+                ; je =>label
+            ),
+            ARMCondition::NE => dynasm!(self.assembler
+                ; .arch x64
+                ; jne =>label
+            ),
+            ARMCondition::CS => dynasm!(self.assembler
+                ; .arch x64
+                ; jc =>label
+            ),
+            ARMCondition::CC => dynasm!(self.assembler
+                ; .arch x64
+                ; jnc =>label
+            ),
+            ARMCondition::MI => dynasm!(self.assembler
+                ; .arch x64
+                ; js =>label
+            ),
+            ARMCondition::PL => dynasm!(self.assembler
+                ; .arch x64
+                ; jns =>label
+            ),
+            ARMCondition::VS => dynasm!(self.assembler
+                ; .arch x64
+                ; jo =>label
+            ),
+            ARMCondition::VC => dynasm!(self.assembler
+                ; .arch x64
+                ; jno =>label
+            ),
+            // Not sure about this one...
+            ARMCondition::HI => dynasm!(self.assembler
+                ; .arch x64
+                ; ja =>label
+            ),
+            // ...or this one
+            ARMCondition::LS => dynasm!(self.assembler
+                ; .arch x64
+                ; jna =>label
+            ),
+            ARMCondition::GE => dynasm!(self.assembler
+                ; .arch x64
+                ; jge =>label
+            ),
+            ARMCondition::LT => dynasm!(self.assembler
+                ; .arch x64
+                ; jl =>label
+            ),
+            ARMCondition::GT => dynasm!(self.assembler
+                ; .arch x64
+                ; jg =>label
+            ),
+            ARMCondition::LE => dynasm!(self.assembler
+                ; .arch x64
+                ; jle =>label
+            ),
+            ARMCondition::AL => dynasm!(self.assembler
+                ; .arch x64
+                ; jmp =>label
+            ),
         }
     }
 }

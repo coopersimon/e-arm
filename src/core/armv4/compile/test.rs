@@ -3,6 +3,7 @@ use crate::{
     Mem32, MemCycleType, ExternalException, ARM7TDMI, ARMCore
 };
 
+#[derive(Clone)]
 struct TestMem {
     data: Vec<u32>
 }
@@ -554,6 +555,47 @@ fn test_teq() {
             assert_eq!(cpu.read_reg(1), 0xFFFF_0000);
             assert_eq!(cpu.read_reg(10), 0);
             assert_eq!(cpu.read_reg(11), 11);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_internal_branch() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE1B0_1000,    // MOVS R1, R0
+            0x4A00_0001,    // BMI #4
+            0xE3A0_2002,    // MOV R2, #2
+            0xE1A0_F00E,    // MOV R15, R14
+            0xE3A0_3003,    // MOV R3, #3
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0xFFFF_FFFF);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(1), 0xFFFF_FFFF);
+                assert_eq!(cpu.read_reg(2), 0);
+                assert_eq!(cpu.read_reg(3), 3);
+            }
+            {
+                let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+                cpu.write_reg(0, 0x1);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(1), 0x1);
+                assert_eq!(cpu.read_reg(2), 2);
+                assert_eq!(cpu.read_reg(3), 0);
+            }
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }

@@ -100,8 +100,9 @@ impl Validator {
                             instructions.push(instruction);
                             return self.resolve_labels(instructions, labels);
                         }
+                    } else {
+                        self.current_meta.ret = ReturnLocation::Reg(*rd);
                     }
-                    self.current_meta.ret = ReturnLocation::Reg(*rd);
                 },
                 ARMv4InstructionType::STM{transfer_params: TransferParams{base_reg: constants::SP_REG, inc, pre_index, writeback}, reg_list, ..} => {
                     self.validate_stm(*inc, *pre_index, *writeback, *reg_list)?;
@@ -142,6 +143,19 @@ impl Validator {
                     // Only return BX instructions are allowed.
                     return Err(CompilerError::IllegalInstruction);
                 },
+
+                // Check for valid ALU ops
+                ARMv4InstructionType::MVN{rd: 15, ..} |
+                ARMv4InstructionType::AND{rd: 15, ..} |
+                ARMv4InstructionType::EOR{rd: 15, ..} |
+                ARMv4InstructionType::ORR{rd: 15, ..} |
+                ARMv4InstructionType::BIC{rd: 15, ..} |
+                ARMv4InstructionType::ADD{rd: 15, ..} |
+                ARMv4InstructionType::SUB{rd: 15, ..} |
+                ARMv4InstructionType::RSB{rd: 15, ..} |
+                ARMv4InstructionType::ADC{rd: 15, ..} |
+                ARMv4InstructionType::SBC{rd: 15, ..} |
+                ARMv4InstructionType::RSC{rd: 15, ..} => return Err(CompilerError::DynamicPCManipulation),
                 _ => {}
             }
 
@@ -178,7 +192,7 @@ impl Validator {
 
     // Return dest address.
     fn validate_branch(&mut self, offset: u32) -> Result<u32, CompilerError> {
-        let dest = self.current_addr.wrapping_add(offset);
+        let dest = self.current_addr.wrapping_add(offset).wrapping_add(8);
         if dest < self.start_addr {
             return Err(CompilerError::BranchBeforeStart);
         } else if dest >= self.end_addr {
