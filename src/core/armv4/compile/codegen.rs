@@ -97,9 +97,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         } else {
             match &instruction.instruction.instr {
                 ARMv4InstructionType::MOV{ rd, op2, set_flags } => self.mov(*rd, op2, *set_flags),
+                ARMv4InstructionType::MVN{ rd, op2, set_flags } => self.mvn(*rd, op2, *set_flags),
                 ARMv4InstructionType::AND{ rd, rn, op2, set_flags } => self.and(*rd, *rn, op2, *set_flags),
                 ARMv4InstructionType::EOR{ rd, rn, op2, set_flags } => self.eor(*rd, *rn, op2, *set_flags),
                 ARMv4InstructionType::ORR{ rd, rn, op2, set_flags } => self.orr(*rd, *rn, op2, *set_flags),
+                ARMv4InstructionType::BIC{ rd, rn, op2, set_flags } => self.bic(*rd, *rn, op2, *set_flags),
 
                 ARMv4InstructionType::ADD{ rd, rn, op2, set_flags } => self.add(*rd, *rn, op2, *set_flags),
                 ARMv4InstructionType::SUB{ rd, rn, op2, set_flags } => self.sub(*rd, *rn, op2, *set_flags),
@@ -572,6 +574,39 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
+    fn mvn(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
+        let dest = self.get_mapped_register(rd);
+        let dest_reg = dest.unwrap_or(3); // 3 = EBX
+        let op = self.alu_operand_2(op2);
+        match op {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov Rd(dest_reg), WORD i
+                    ; not Rd(dest_reg)
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov Rd(dest_reg), Rd(r)
+                    ; not Rd(dest_reg)
+                );
+            }
+        }
+        // x86 MOV + NOT doesn't set flags by itself
+        if set_flags {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; test Rd(dest_reg), WORD -1
+            );
+        }
+        // Unmapped dest: we need to write back.
+        if dest.is_none() {
+            self.writeback_unmapped_dest(rd);
+        }
+    }
+
     fn and(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
         self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
             match op2 {
@@ -627,6 +662,41 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 }
             }
         })
+    }
+
+    fn bic(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+        let dest = self.get_mapped_register(rd);
+        let dest_reg = dest.unwrap_or(3); // 3 = EBX
+        let op1_reg = self.get_register(rn);
+
+        let op2 = self.alu_operand_2(op2);
+
+        match op2 {
+            DataOperand::Imm(i) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov eax, WORD i
+                    ; andn Rd(dest_reg), eax, Rd(op1_reg)
+                );
+            },
+            DataOperand::Reg(r) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; andn Rd(dest_reg), Rd(r), Rd(op1_reg)
+                );
+            }
+        }
+
+        // Unmapped dest: we need to write back.
+        if dest.is_none() {
+            self.writeback_unmapped_dest(rd);
+        }
+        if !set_flags {
+            self.pop_flags();
+        }
     }
 
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {

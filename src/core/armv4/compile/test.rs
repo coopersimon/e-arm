@@ -445,3 +445,54 @@ fn test_long_sub() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_bic() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE3C0_30F0,    // BIC R3, R0, #F0
+            0xE1C3_9008,    // BIC R9, R3, R8
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0xE1E1);
+            cpu.write_reg(8, 0x3333);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(3), 0xE101);
+            assert_eq!(cpu.read_reg(9), 0xC000);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_mvn() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE1E0_5000,    // MVN R5, R0
+            0xE3E0_6CF1,    // MVN R6, #F100
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
+            cpu.write_reg(0, 0x1E1E_2525);
+
+            routine.call(&mut cpu);
+
+            assert_eq!(cpu.read_reg(5), 0xE1E1_DADA);
+            assert_eq!(cpu.read_reg(6), 0xFFFF_0EFF);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
