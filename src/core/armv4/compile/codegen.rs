@@ -148,6 +148,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::MLA{set_flags, rd, rn, rs, rm} => self.mla(*rd, *rn, *rs, *rm, *set_flags),
                 ARMv4InstructionType::UMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.umull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
                 ARMv4InstructionType::UMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.umlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+                ARMv4InstructionType::SMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.smull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+                ARMv4InstructionType::SMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.smlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
 
                 _ => panic!("not supported"),
             }
@@ -1018,6 +1020,69 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         dynasm!(self.assembler
             ; .arch x64
             ; mul Rd(op2)
+        );
+
+        // Accumulate
+        let dest_lo = self.get_register(rd_lo, EBX);
+        let dest_hi = self.get_register(rd_hi, ECX);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add eax, Rd(dest_lo)
+            ; adc edx, Rd(dest_hi)
+        );
+        
+        self.writeback_dest(rd_hi, EDX);
+        self.writeback_dest(rd_lo, EAX);
+        if !set_flags {
+            self.pop_flags();
+        }
+    }
+
+    fn smull(&mut self, rd_hi: usize, rd_lo: usize, rs: usize, rm: usize, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+
+        let op2 = self.get_register(rm, EBX);
+
+        let op1 = self.get_register(rs, EAX);
+        if op1 != EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov eax, Rd(op1)
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; imul Rd(op2)
+        );
+
+        self.writeback_dest(rd_hi, EDX);
+        self.writeback_dest(rd_lo, EAX);
+        if !set_flags {
+            self.pop_flags();
+        }
+    }
+
+    fn smlal(&mut self, rd_hi: usize, rd_lo: usize, rs: usize, rm: usize, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+
+        let op2 = self.get_register(rm, EBX);
+
+        let op1 = self.get_register(rs, EAX);
+        if op1 != EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov eax, Rd(op1)
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; imul Rd(op2)
         );
 
         // Accumulate
