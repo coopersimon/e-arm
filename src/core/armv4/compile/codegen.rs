@@ -130,7 +130,17 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::CMP{rn, op2} => self.cmp(*rn, op2),
                 ARMv4InstructionType::CMN{rn, op2} => self.cmn(*rn, op2),
 
+                ARMv4InstructionType::TADDPC{rd, op2} => self.taddpc(*rd, *op2),
+
                 ARMv4InstructionType::B{..} => unreachable!("this should have been generated earlier..."),
+                ARMv4InstructionType::TB{..} => unreachable!("this should have been generated earlier..."),
+                ARMv4InstructionType::BX{..} => unreachable!("this should only occur as a return..."),
+                ARMv4InstructionType::BL{offset} => self.bl(*offset),
+                ARMv4InstructionType::TBLLO{offset} => panic!("TODO: tbllo..."),
+                ARMv4InstructionType::TBLHI{offset} => self.bl(*offset),
+
+                ARMv4InstructionType::MUL{set_flags, rd, rs, rm} => self.mul(*rd, *rs, *rm, *set_flags),
+                ARMv4InstructionType::MLA{set_flags, rd, rn, rs, rm} => self.mla(*rd, *rn, *rs, *rm, *set_flags),
 
                 _ => panic!("not supported"),
             }
@@ -480,27 +490,28 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     /// Write the value back to the dest register.
-    /// The value should be in EBX.
-    fn writeback_dest(&mut self, rd: usize) {
+    /// Rd = Virtual ARM register
+    /// From = x86 register
+    fn writeback_dest(&mut self, rd: usize, from: u8) {
         match self.get_mapped_register(rd) {
             Some(reg) => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; mov Rd(reg), ebx
+                    ; mov Rd(reg), Rd(from)
                 );
             },
-            None => self.writeback_unmapped_dest(rd),
+            None => self.writeback_unmapped_dest(rd, from),
         }
     }
 
-    fn writeback_unmapped_dest(&mut self, rd: usize) {
+    fn writeback_unmapped_dest(&mut self, rd: usize, from: u8) {
         let write_reg = wrap_write_reg::<M, T> as i64;
         let reg = rd as i32;
         dynasm!(self.assembler
             ; .arch x64
             ; mov rax, QWORD write_reg
             ; mov rsi, reg
-            ; mov edx, ebx
+            ; mov edx, Rd(from)
             //; push r8
             //; push r9
             //; push r10
@@ -551,7 +562,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         op(self, op1_reg, op2);
 
         if op1_reg == EBX {
-            self.writeback_dest(rd);
+            self.writeback_dest(rd, EBX);
         }
         if !set_flags {
             self.pop_flags();
@@ -619,7 +630,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            self.writeback_unmapped_dest(rd);
+            self.writeback_unmapped_dest(rd, EBX);
         }
     }
 
@@ -648,7 +659,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            self.writeback_unmapped_dest(rd);
+            self.writeback_unmapped_dest(rd, EBX);
         }
     }
 
@@ -721,7 +732,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         // Unmapped dest: we need to write back.
         if dest.is_none() {
-            self.writeback_unmapped_dest(rd);
+            self.writeback_unmapped_dest(rd, EBX);
         }
         if !set_flags {
             self.pop_flags();
@@ -811,7 +822,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; sub ebx, Rd(op1_reg)
         );
 
-        self.writeback_dest(rd);
+        self.writeback_dest(rd, EBX);
         if !set_flags {
             self.pop_flags();
         }
@@ -840,7 +851,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; sbb ebx, Rd(op1_reg)
         );
 
-        self.writeback_dest(rd);
+        self.writeback_dest(rd, EBX);
         if !set_flags {
             self.pop_flags();
         }
@@ -914,6 +925,91 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
+    fn taddpc(&mut self, rd: usize, op2: u32) {
+        let val = self.current_pc.wrapping_add(op2) as i32;
+        let dest = self.get_mapped_register(rd);
+        let dest_reg = dest.unwrap_or(EBX);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov Rd(dest_reg), WORD val
+        );
+        if dest.is_none() {
+            self.writeback_unmapped_dest(rd, EBX);
+        }
+    }
+
+    fn mul(&mut self, rd: usize, rs: usize, rm: usize, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+
+        let mut op2 = self.get_register(rm);
+        if op2 == EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(op2)
+            );
+            op2 = EBX;
+        }
+
+        let op1 = self.get_register(rs);
+        if op1 != EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov eax, Rd(op1)
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mul Rd(op2)
+        );
+        self.writeback_dest(rd, EAX);
+        if !set_flags {
+            self.pop_flags();
+        }
+    }
+
+    fn mla(&mut self, rd: usize, rn: usize, rs: usize, rm: usize, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+
+        let mut op2 = self.get_register(rm);
+        if op2 == EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(op2)
+            );
+            op2 = EBX;
+        }
+
+        let op1 = self.get_register(rs);
+        if op1 != EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov eax, Rd(op1)
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mul Rd(op2)
+            ; mov ebx, eax
+        );
+
+        let add_op = self.get_register(rn);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add ebx, Rd(add_op)
+        );
+
+        self.writeback_dest(rd, EBX);
+        if !set_flags {
+            self.pop_flags();
+        }
+    }
+
     fn b(&mut self, cond: ARMCondition, label: DynamicLabel) {
         match cond {
             ARMCondition::EQ => dynasm!(self.assembler
@@ -979,6 +1075,33 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; jmp =>label
             ),
         }
+    }
+
+    fn bl(&mut self, offset: u32) {
+        let dest = self.current_pc.wrapping_add(offset) as i32;
+        let call_subroutine = wrap_call_subroutine::<M, T> as i64;
+        dynasm!(self.assembler
+            ; .arch x64
+
+            ; mov rax, QWORD call_subroutine
+            ; mov esi, WORD dest
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+            ; pushf
+
+            ; call rax
+
+            ; popf
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
+        );
     }
 }
 

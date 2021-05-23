@@ -11,7 +11,6 @@ pub enum Subroutine<T> {
     CannotCompile,
     /// This subroutine has been JIT-compiled.
     Compiled(Rc<JITObject<T>>),
-    //_Unused(Infallible, PhantomData<M>)
 }
 
 impl<T> Clone for Subroutine<T> {

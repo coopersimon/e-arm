@@ -600,3 +600,36 @@ fn test_internal_branch() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_multiply() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE004_0091,    // MUL R4, R0, R1
+            0xE005_0498,    // MUL R5, R4, R8
+            0xE026_5293,    // MLA R6, R2, R3, +R5
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0x10);
+                cpu.write_reg(1, 0x1F);
+                cpu.write_reg(2, 0x33);
+                cpu.write_reg(3, 0xFFFF_FFFF);
+                cpu.write_reg(8, 0x22);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(4), 0x1F0);
+                assert_eq!(cpu.read_reg(5), 0x41E0);
+                assert_eq!(cpu.read_reg(6), 0x41AD);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
