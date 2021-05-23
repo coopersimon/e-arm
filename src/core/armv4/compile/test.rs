@@ -633,3 +633,38 @@ fn test_multiply() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_long_multiply() {
+    let mut mem = TestMem {
+        data: vec![
+            0xE086_7091,    // UMULL R6, R7, R0, R1
+            0xE08A_B293,    // UMULL R10, R11, R2, R3
+            0xE0AA_B495,    // UMLAL R10, R11, R4, R5
+            0xE1A0_F00E,    // MOV R15, R14
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0x1234_5678);
+                cpu.write_reg(1, 0x2323_4545);
+                cpu.write_reg(2, 0x33);
+                cpu.write_reg(3, 0xFFFF_FFFF);
+                cpu.write_reg(4, 0x555);
+                cpu.write_reg(5, 0x666);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(6), 0x27F_A9E7);
+                assert_eq!(cpu.read_reg(7), 0x3DD1_A658);
+                assert_eq!(cpu.read_reg(10), 0x33);
+                assert_eq!(cpu.read_reg(11), 0x0022_1DAB);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}

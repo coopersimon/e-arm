@@ -23,6 +23,8 @@ use crate::{
 use super::DecodedInstruction;
 
 const EAX: u8 = 0;
+const ECX: u8 = 1;
+const EDX: u8 = 2;
 const EBX: u8 = 3;
 
 pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
@@ -144,6 +146,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
                 ARMv4InstructionType::MUL{set_flags, rd, rs, rm} => self.mul(*rd, *rs, *rm, *set_flags),
                 ARMv4InstructionType::MLA{set_flags, rd, rn, rs, rm} => self.mla(*rd, *rn, *rs, *rm, *set_flags),
+                ARMv4InstructionType::UMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.umull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+                ARMv4InstructionType::UMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.umlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
 
                 _ => panic!("not supported"),
             }
@@ -284,17 +288,19 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     /// Get the register number to use.
     /// If it is mapped, it will return the mapped value.
-    /// Otherwise it will generate code to load the register into EAX and return that.
-    fn get_register(&mut self, reg: usize) -> u8 {
+    /// Otherwise it will generate code to load the register into the specified register and return that.
+    /// 
+    /// WARNING: this will destroy the value in RCX!
+    fn get_register(&mut self, reg: usize, unmapped: u8) -> u8 {
         let op1 = self.get_mapped_register(reg);
         op1.unwrap_or_else(|| {
             let reg_offset = (reg * 4) as i32;
             dynasm!(self.assembler
                 ; .arch x64
-                ; mov rax, [rbp-8]
-                ; mov eax, [rax+reg_offset]
+                ; mov rcx, [rbp-8]
+                ; mov Rd(unmapped), [rcx+reg_offset]
             );
-            EAX
+            unmapped
         })
     }
 
@@ -305,7 +311,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if reg == 15 {
             DataOperand::Imm(self.current_pc as i32)
         } else {
-            DataOperand::Reg(self.get_register(reg))
+            DataOperand::Reg(self.get_register(reg, EBX))
         }
     }
 
@@ -316,9 +322,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ALUOperand::Normal(op) => match op {
                 ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
                 ShiftOperand::Register(15) => DataOperand::Imm(self.current_pc as i32),
-                ShiftOperand::Register(r) => DataOperand::Reg(self.get_register(*r)),
+                ShiftOperand::Register(r) => DataOperand::Reg(self.get_register(*r, EAX)),
                 ShiftOperand::LSL{shift_amount, reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     let shift_val = *shift_amount as i8;
                     if reg != EAX {
                         dynasm!(self.assembler
@@ -333,7 +339,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     DataOperand::Reg(EAX)
                 },
                 ShiftOperand::LSR{shift_amount, reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     let shift_val = *shift_amount as i8;
                     if reg != EAX {
                         dynasm!(self.assembler
@@ -348,7 +354,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     DataOperand::Reg(EAX)
                 },
                 ShiftOperand::ASR{shift_amount, reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     let shift_val = *shift_amount as i8;
                     if reg != EAX {
                         dynasm!(self.assembler
@@ -363,7 +369,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     DataOperand::Reg(EAX)
                 },
                 ShiftOperand::ROR{shift_amount, reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     let shift_val = *shift_amount as i8;
                     if reg != EAX {
                         dynasm!(self.assembler
@@ -378,7 +384,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     DataOperand::Reg(EAX)
                 },
                 ShiftOperand::LSR32{reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     if reg != EAX {
                         dynasm!(self.assembler
                             ; .arch x64
@@ -393,7 +399,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     DataOperand::Reg(EAX)
                 },
                 ShiftOperand::ASR32{reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     if reg != EAX {
                         dynasm!(self.assembler
                             ; .arch x64
@@ -407,7 +413,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     DataOperand::Reg(EAX)
                 },
                 ShiftOperand::RRX{reg} => {
-                    let reg = self.get_register(*reg);
+                    let reg = self.get_register(*reg, EAX);
                     if reg != EAX {
                         dynasm!(self.assembler
                             ; .arch x64
@@ -422,28 +428,16 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 },
             },
             ALUOperand::RegShift{op, shift_reg, reg} => {
-                let shift_reg = self.get_register(*shift_reg);
-                if shift_reg == EAX {
-                    // We need to use register A for the data register.
-                    dynasm!(self.assembler
-                        ; .arch x64
-                        ; push rax
-                    );
-                }
-                let data_reg = self.get_register(*reg);
+                let data_reg = self.get_register(*reg, EAX);
                 if data_reg != EAX {
                     dynasm!(self.assembler
                         ; .arch x64
                         ; mov eax, Rd(data_reg)
                     );
                 }
+                let shift_reg = self.get_register(*shift_reg, ECX);
                 // The shift needs to be in register C.
-                if shift_reg == EAX {
-                    dynasm!(self.assembler
-                        ; .arch x64
-                        ; pop rcx
-                    );
-                } else {
+                if shift_reg != ECX {
                     dynasm!(self.assembler
                         ; .arch x64
                         ; mov ecx, Rd(shift_reg)
@@ -495,14 +489,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
+    /// Writeback an unmapped dest register to memory.
+    /// 
+    /// WARNING: this will destroy the value in RCX!
     fn writeback_unmapped_dest(&mut self, rd: usize, from: u8) {
-        //let write_reg = wrap_write_reg::<M, T> as i64;
-        //let reg = rd as i32;
         let reg_offset = (rd * 4) as i32;
         dynasm!(self.assembler
             ; .arch x64
-            ; mov rax, [rbp-8]
-            ; mov [rax+reg_offset], Rd(from)
+            ; mov rcx, [rbp-8]
+            ; mov [rcx+reg_offset], Rd(from)
         );
     }
 
@@ -524,7 +519,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 EBX
             },
             DataOperand::Reg(r) => {
-                if rd == rn && r != EAX {
+                if rd == rn && r != EBX {
                     // We can use the register value directly.
                     r
                 } else {
@@ -693,7 +688,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(EBX);
-        let op1_reg = self.get_register(rn);
+        let op1_reg = self.get_register(rn, EBX);
 
         let op2 = self.alu_operand_2(op2);
 
@@ -794,7 +789,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             )
         }
 
-        let op1_reg = self.get_register(rn);
+        let op1_reg = self.get_register(rn, EAX);
 
         dynasm!(self.assembler
             ; .arch x64
@@ -823,7 +818,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             )
         }
 
-        let op1_reg = self.get_register(rn);
+        let op1_reg = self.get_register(rn, EAX);
 
         dynasm!(self.assembler
             ; .arch x64
@@ -837,7 +832,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn tst(&mut self, rn: usize, op2: &ALUOperand) {
-        let op1_reg = self.get_register(rn);
+        let op1_reg = self.get_register(rn, EBX);
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
@@ -852,11 +847,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn teq(&mut self, rn: usize, op2: &ALUOperand) {
-        let op1_reg = self.get_register(rn);
-        dynasm!(self.assembler
-            ; .arch x64
-            ; mov ebx, Rd(op1_reg)
-        );
+        let op1_reg = self.get_register(rn, EBX);
+        if op1_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(op1_reg)
+            );
+        }
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
@@ -871,7 +868,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn cmp(&mut self, rn: usize, op2: &ALUOperand) {
-        let op1_reg = self.get_register(rn);
+        let op1_reg = self.get_register(rn, EBX);
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
@@ -886,11 +883,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn cmn(&mut self, rn: usize, op2: &ALUOperand) {
-        let op1_reg = self.get_register(rn);
-        dynasm!(self.assembler
-            ; .arch x64
-            ; mov ebx, Rd(op1_reg)
-        );
+        let op1_reg = self.get_register(rn, EBX);
+        if op1_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(op1_reg)
+            );
+        }
         let op2 = self.alu_operand_2(op2);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
@@ -922,16 +921,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             self.push_flags();
         }
 
-        let mut op2 = self.get_register(rm);
-        if op2 == EAX {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov ebx, Rd(op2)
-            );
-            op2 = EBX;
-        }
+        let op2 = self.get_register(rm, EBX);
 
-        let op1 = self.get_register(rs);
+        let op1 = self.get_register(rs, EAX);
         if op1 != EAX {
             dynasm!(self.assembler
                 ; .arch x64
@@ -954,16 +946,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             self.push_flags();
         }
 
-        let mut op2 = self.get_register(rm);
-        if op2 == EAX {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov ebx, Rd(op2)
-            );
-            op2 = EBX;
-        }
+        let op2 = self.get_register(rm, EBX);
 
-        let op1 = self.get_register(rs);
+        let op1 = self.get_register(rs, EAX);
         if op1 != EAX {
             dynasm!(self.assembler
                 ; .arch x64
@@ -974,16 +959,78 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         dynasm!(self.assembler
             ; .arch x64
             ; mul Rd(op2)
-            ; mov ebx, eax
         );
 
-        let add_op = self.get_register(rn);
+        let add_op = self.get_register(rn, EDX);
         dynasm!(self.assembler
             ; .arch x64
-            ; add ebx, Rd(add_op)
+            ; add eax, Rd(add_op)
         );
 
-        self.writeback_dest(rd, EBX);
+        self.writeback_dest(rd, EAX);
+        if !set_flags {
+            self.pop_flags();
+        }
+    }
+
+    fn umull(&mut self, rd_hi: usize, rd_lo: usize, rs: usize, rm: usize, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+
+        let op2 = self.get_register(rm, EBX);
+
+        let op1 = self.get_register(rs, EAX);
+        if op1 != EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov eax, Rd(op1)
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mul Rd(op2)
+        );
+
+        self.writeback_dest(rd_hi, EDX);
+        self.writeback_dest(rd_lo, EAX);
+        if !set_flags {
+            self.pop_flags();
+        }
+    }
+
+    fn umlal(&mut self, rd_hi: usize, rd_lo: usize, rs: usize, rm: usize, set_flags: bool) {
+        if !set_flags {
+            self.push_flags();
+        }
+
+        let op2 = self.get_register(rm, EBX);
+
+        let op1 = self.get_register(rs, EAX);
+        if op1 != EAX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov eax, Rd(op1)
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mul Rd(op2)
+        );
+
+        // Accumulate
+        let dest_lo = self.get_register(rd_lo, EBX);
+        let dest_hi = self.get_register(rd_hi, ECX);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add eax, Rd(dest_lo)
+            ; adc edx, Rd(dest_hi)
+        );
+        
+        self.writeback_dest(rd_hi, EDX);
+        self.writeback_dest(rd_lo, EAX);
         if !set_flags {
             self.pop_flags();
         }
