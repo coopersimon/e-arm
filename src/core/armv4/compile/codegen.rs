@@ -58,6 +58,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             // rdi = CPU
             ; push rbp
             ; mov rbp, rsp
+            ; sub rsp, 8    // Space for regs
             ; push rbx
             ; push r12
             ; push r13
@@ -78,6 +79,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov r13d, [rax+20]
             ; mov r14d, [rax+24]
             ; mov r15d, [rax+52]
+
+            ; mov [rbp-8], rax  // Put reg ptr on stack
 
             // TODO: flags?
         );
@@ -285,23 +288,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn get_register(&mut self, reg: usize) -> u8 {
         let op1 = self.get_mapped_register(reg);
         op1.unwrap_or_else(|| {
-            let read_reg = wrap_read_reg::<M, T> as i64;
-            let reg_num = reg as i32;
+            let reg_offset = (reg * 4) as i32;
             dynasm!(self.assembler
                 ; .arch x64
-                ; mov rax, QWORD read_reg
-                ; mov rsi, reg_num
-                //; push r8
-                //; push r9
-                //; push r10
-                //; push r11
-                ; pushf
-                ; call rax
-                ; popf
-                //; pop r11
-                //; pop r10
-                //; pop r9
-                //; pop r8
+                ; mov rax, [rbp-8]
+                ; mov eax, [rax+reg_offset]
             );
             EAX
         })
@@ -505,24 +496,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn writeback_unmapped_dest(&mut self, rd: usize, from: u8) {
-        let write_reg = wrap_write_reg::<M, T> as i64;
-        let reg = rd as i32;
+        //let write_reg = wrap_write_reg::<M, T> as i64;
+        //let reg = rd as i32;
+        let reg_offset = (rd * 4) as i32;
         dynasm!(self.assembler
             ; .arch x64
-            ; mov rax, QWORD write_reg
-            ; mov rsi, reg
-            ; mov edx, Rd(from)
-            //; push r8
-            //; push r9
-            //; push r10
-            //; push r11
-            ; pushf
-            ; call rax
-            ; popf
-            //; pop r11
-            //; pop r10
-            //; pop r9
-            //; pop r8
+            ; mov rax, [rbp-8]
+            ; mov [rax+reg_offset], Rd(from)
         );
     }
 
@@ -579,8 +559,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             // TODO: write back flags?
 
             // Write back regs
-            ; mov rax, QWORD mut_regs
-            ; call rax
+            ; mov rax, [rbp-8]
 
             ; mov [rax], r8d
             ; mov [rax+4], r9d
@@ -1108,16 +1087,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 // CPU wrappers
 pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, dest: u32) {
     cpu.as_mut().unwrap().call_subroutine(dest);
-}
-
-pub unsafe extern "Rust" fn wrap_read_reg<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, reg: usize) -> u32 {
-    //println!("Read reg {}", reg);
-    cpu.as_mut().unwrap().read_reg(reg)
-}
-
-pub unsafe extern "Rust" fn wrap_write_reg<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, reg: usize, data: u32) {
-    //println!("Write {:X} to reg {}", data, reg);
-    cpu.as_mut().unwrap().write_reg(reg, data);
 }
 
 pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) -> *mut u32 {
