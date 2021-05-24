@@ -156,6 +156,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::SWP{rn, rd, rm} => self.swp(*rn, *rd, *rm, false),
                 ARMv4InstructionType::SWPB{rn, rd, rm} => self.swp(*rn, *rd, *rm, true),
 
+                ARMv4InstructionType::TLDRPC{data_reg, offset} => self.tldrpc(*data_reg, *offset),
                 ARMv4InstructionType::LDR{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, false),
                 ARMv4InstructionType::STR{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, false),
                 ARMv4InstructionType::LDRB{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, true),
@@ -209,6 +210,30 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         dynasm!(self.assembler
             ; .arch x64
             ; popf
+        );
+    }
+
+    /// Call a subroutine
+    /// WARNING: Will destroy the value in RCX!
+    /// Arguments in via rdi, rsi, rdx
+    fn call(&mut self, subroutine: i64) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov rcx, QWORD subroutine
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+
+            ; call rcx
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
         );
     }
 
@@ -625,25 +650,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         dynasm!(self.assembler
             ; .arch x64
-            ; mov rcx, QWORD load_method
             ; mov esi, ebx
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
-
-            ; movzx eax, ax
         );
+        self.call(load_method);
 
         extend(self);
 
@@ -1284,30 +1293,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn bl(&mut self, offset: u32) {
+        self.push_flags();
         let dest = self.current_pc.wrapping_add(offset) as i32;
         let call_subroutine = wrap_call_subroutine::<M, T> as i64;
         dynasm!(self.assembler
             ; .arch x64
-
-            ; mov rax, QWORD call_subroutine
             ; mov esi, DWORD dest
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-            ; pushf
-
-            ; call rax
-
-            ; popf
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
         );
+        self.call(call_subroutine);
+        self.pop_flags();
     }
 
     fn swp(&mut self, rn: usize, rd: usize, rm: usize, byte: bool) {
@@ -1321,38 +1315,16 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             );
         }
 
-        if byte {
-            let load_byte = wrap_load_byte::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD load_byte
-            );
+        let load_routine = if byte {
+            wrap_load_byte::<M, T> as i64
         } else {
-            let load_word = wrap_load_word::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD load_word
-            );
-        }
-
+            wrap_load_word::<M, T> as i64
+        };
         dynasm!(self.assembler
             ; .arch x64
             ; mov esi, ebx
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
         );
+        self.call(load_routine);
         // TODO: add clock [RDX]
 
         if byte {
@@ -1372,39 +1344,33 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         self.writeback_dest(rd, EAX);
 
-        if byte {
-            let store_byte = wrap_store_byte::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD store_byte
-            );
+        let store_routine = if byte {
+            wrap_store_byte::<M, T> as i64
         } else {
-            let store_word = wrap_store_word::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD store_word
-            );
-        }
-
+            wrap_store_word::<M, T> as i64
+        };
         dynasm!(self.assembler
             ; .arch x64
             ; mov esi, ebx
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
         );
+        self.call(store_routine);
         // TODO: add clock [RAX]
+
+        self.pop_flags();
+    }
+
+    fn tldrpc(&mut self, data_reg: usize, offset: u32) {
+        self.push_flags();
+
+        let addr = self.current_pc.wrapping_add(offset) as i32;
+        let load_word = wrap_load_word::<M, T> as i64;
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov esi, DWORD addr
+        );
+        self.call(load_word);
+
+        self.writeback_dest(data_reg, EAX);
 
         self.pop_flags();
     }
@@ -1425,38 +1391,16 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             self.addr_offset(EBX, transfer_params.inc, offset);
         }
 
-        if byte {
-            let load_byte = wrap_load_byte::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD load_byte
-            );
+        let load_routine = if byte {
+            wrap_load_byte::<M, T> as i64
         } else {
-            let load_word = wrap_load_word::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD load_word
-            );
-        }
-
+            wrap_load_word::<M, T> as i64
+        };
         dynasm!(self.assembler
             ; .arch x64
             ; mov esi, ebx
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
         );
+        self.call(load_routine);
 
         if byte {
             dynasm!(self.assembler
@@ -1533,39 +1477,16 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             );
         }
 
-        if byte {
-            let store_byte = wrap_store_byte::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD store_byte
-            );
+        let store_routine = if byte {
+            wrap_store_byte::<M, T> as i64
         } else {
-            let store_word = wrap_store_word::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rcx, QWORD store_word
-            );
-        }
-
+            wrap_store_word::<M, T> as i64
+        };
         dynasm!(self.assembler
             ; .arch x64
             ; mov esi, ebx
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
         );
-
+        self.call(store_routine);
         // TODO: add clock [RAX]
         
         if !transfer_params.pre_index {
@@ -1606,24 +1527,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         let store_halfword = wrap_store_halfword::<M, T> as i64;
         dynasm!(self.assembler
             ; .arch x64
-            ; mov rcx, QWORD store_halfword
             ; mov esi, ebx
-
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
-
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
         );
-
+        self.call(store_halfword);
         // TODO: add clock [RAX]
         
         if !transfer_params.pre_index {
