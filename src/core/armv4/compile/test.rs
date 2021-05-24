@@ -1184,3 +1184,99 @@ fn test_store_halfword() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_swp_word() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE101_8090,    // SWP R8, R0, [R1]
+            0xE103_2092,    // SWP R2, R2, [R3]
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: vec![
+            0x82, 0x83, 0x84, 0x85,
+            0x66, 0x77, 0x88, 0x99
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0x1234_5678);
+                cpu.write_reg(1, 0x1000_0000);
+                cpu.write_reg(2, 0x2345_6789);
+                cpu.write_reg(3, 0x1000_0004);
+                cpu.write_reg(8, 0xFFEE_DDCC);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0x1234_5678);
+                assert_eq!(cpu.read_reg(1), 0x1000_0000);
+                assert_eq!(cpu.read_reg(2), 0x9988_7766);
+                assert_eq!(cpu.read_reg(3), 0x1000_0004);
+                assert_eq!(cpu.read_reg(8), 0x8584_8382);
+
+                assert_eq!(cpu.ref_mem().data[0], 0x78);
+                assert_eq!(cpu.ref_mem().data[1], 0x56);
+                assert_eq!(cpu.ref_mem().data[2], 0x34);
+                assert_eq!(cpu.ref_mem().data[3], 0x12);
+
+                assert_eq!(cpu.ref_mem().data[4], 0x89);
+                assert_eq!(cpu.ref_mem().data[5], 0x67);
+                assert_eq!(cpu.ref_mem().data[6], 0x45);
+                assert_eq!(cpu.ref_mem().data[7], 0x23);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_swp_byte() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE141_8090,    // SWPB R8, R0, [R1]
+            0xE143_2092,    // SWPB R2, R2, [R3]
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: vec![
+            0x82, 0x83, 0x84, 0x85,
+            0x66, 0x77, 0x88, 0x99
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0x1234_5678);
+                cpu.write_reg(1, 0x1000_0000);
+                cpu.write_reg(2, 0x2345_6789);
+                cpu.write_reg(3, 0x1000_0005);
+                cpu.write_reg(8, 0xFFEE_DDCC);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0x1234_5678);
+                assert_eq!(cpu.read_reg(1), 0x1000_0000);
+                assert_eq!(cpu.read_reg(2), 0x77);
+                assert_eq!(cpu.read_reg(3), 0x1000_0005);
+                assert_eq!(cpu.read_reg(8), 0x82);
+
+                assert_eq!(cpu.ref_mem().data[0], 0x78);
+                assert_eq!(cpu.ref_mem().data[1], 0x83);
+                assert_eq!(cpu.ref_mem().data[2], 0x84);
+                assert_eq!(cpu.ref_mem().data[3], 0x85);
+
+                assert_eq!(cpu.ref_mem().data[4], 0x66);
+                assert_eq!(cpu.ref_mem().data[5], 0x89);
+                assert_eq!(cpu.ref_mem().data[6], 0x88);
+                assert_eq!(cpu.ref_mem().data[7], 0x99);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}

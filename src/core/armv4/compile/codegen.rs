@@ -153,6 +153,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::SMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.smull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
                 ARMv4InstructionType::SMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.smlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
 
+                ARMv4InstructionType::SWP{rn, rd, rm} => self.swp(*rn, *rd, *rm, false),
+                ARMv4InstructionType::SWPB{rn, rd, rm} => self.swp(*rn, *rd, *rm, true),
+
                 ARMv4InstructionType::LDR{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, false),
                 ARMv4InstructionType::STR{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, false),
                 ARMv4InstructionType::LDRB{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, true),
@@ -1305,6 +1308,105 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; pop r8
             ; pop rdi
         );
+    }
+
+    fn swp(&mut self, rn: usize, rd: usize, rm: usize, byte: bool) {
+        self.push_flags();
+
+        let addr_reg = self.get_register(rn, EBX);
+        if addr_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(addr_reg)
+            );
+        }
+
+        if byte {
+            let load_byte = wrap_load_byte::<M, T> as i64;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov rcx, QWORD load_byte
+            );
+        } else {
+            let load_word = wrap_load_word::<M, T> as i64;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov rcx, QWORD load_word
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov esi, ebx
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+
+            ; call rcx
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
+        );
+        // TODO: add clock [RDX]
+
+        if byte {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; movzx eax, al
+            );
+        }
+
+        let src_data_reg = self.get_register(rm, EDX);
+        if src_data_reg != EDX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov edx, Rd(src_data_reg)
+            );
+        }
+
+        self.writeback_dest(rd, EAX);
+
+        if byte {
+            let store_byte = wrap_store_byte::<M, T> as i64;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov rcx, QWORD store_byte
+            );
+        } else {
+            let store_word = wrap_store_word::<M, T> as i64;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov rcx, QWORD store_word
+            );
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov esi, ebx
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+
+            ; call rcx
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
+        );
+        // TODO: add clock [RAX]
+
+        self.pop_flags();
     }
 
     fn ldr(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &ShiftOperand, byte: bool) {
