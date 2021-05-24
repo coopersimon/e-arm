@@ -158,6 +158,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::LDRB{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, true),
                 ARMv4InstructionType::STRB{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, true),
                 ARMv4InstructionType::LDRH{transfer_params, data_reg, offset} => self.ldrh(transfer_params, *data_reg, offset),
+                ARMv4InstructionType::LDRSB{transfer_params, data_reg, offset} => self.ldrsb(transfer_params, *data_reg, offset),
+                ARMv4InstructionType::LDRSH{transfer_params, data_reg, offset} => self.ldrsh(transfer_params, *data_reg, offset),
                 ARMv4InstructionType::STRH{transfer_params, data_reg, offset} => self.strh(transfer_params, *data_reg, offset),
 
                 _ => panic!("not supported"),
@@ -596,6 +598,64 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if !set_flags {
             self.pop_flags();
         }
+    }
+
+    /// Do a load halfword, or load signed byte / halfword.
+    #[inline]
+    fn ext_ldr<F>(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &OpData, load_method: i64, extend: F)
+        where F: FnOnce(&mut Self)
+    {
+        self.push_flags();
+
+        let addr_reg = self.get_register(transfer_params.base_reg, EBX);
+        if addr_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(addr_reg)
+            );
+        }
+
+        if transfer_params.pre_index {
+            let offset = self.data_op(offset);
+            self.addr_offset(EBX, transfer_params.inc, offset);
+        }
+
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov rcx, QWORD load_method
+            ; mov esi, ebx
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+
+            ; call rcx
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
+
+            ; movzx eax, ax
+        );
+
+        extend(self);
+
+        self.writeback_dest(data_reg, EAX);
+        // TODO: add clock [RDX]
+        
+        if !transfer_params.pre_index {
+            let offset = self.data_op(offset);
+            self.addr_offset(EBX, transfer_params.inc, offset);
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        } else if transfer_params.writeback {
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        }
+
+        self.pop_flags();
     }
 
     /// Generate code for returning from subroutine.
@@ -1318,56 +1378,33 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn ldrh(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &OpData) {
-        self.push_flags();
-
-        let addr_reg = self.get_register(transfer_params.base_reg, EBX);
-        if addr_reg != EBX {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov ebx, Rd(addr_reg)
-            );
-        }
-
-        if transfer_params.pre_index {
-            let offset = self.data_op(offset);
-            self.addr_offset(EBX, transfer_params.inc, offset);
-        }
-
         let load_halfword = wrap_load_halfword::<M, T> as i64;
-        dynasm!(self.assembler
-            ; .arch x64
-            ; mov rcx, QWORD load_halfword
-            ; mov esi, ebx
+        self.ext_ldr(transfer_params, data_reg, offset, load_halfword, |c| {
+            dynasm!(c.assembler
+                ; .arch x64
+                ; movzx eax, ax
+            );
+        });
+    }
 
-            ; push rdi
-            ; push r8
-            ; push r9
-            ; push r10
-            ; push r11
+    fn ldrsb(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &OpData) {
+        let load_byte = wrap_load_byte::<M, T> as i64;
+        self.ext_ldr(transfer_params, data_reg, offset, load_byte, |c| {
+            dynasm!(c.assembler
+                ; .arch x64
+                ; movsx eax, al
+            );
+        });
+    }
 
-            ; call rcx
-
-            ; pop r11
-            ; pop r10
-            ; pop r9
-            ; pop r8
-            ; pop rdi
-
-            ; movzx eax, ax
-        );
-
-        self.writeback_dest(data_reg, EAX);
-        // TODO: add clock [RDX]
-        
-        if !transfer_params.pre_index {
-            let offset = self.data_op(offset);
-            self.addr_offset(EBX, transfer_params.inc, offset);
-            self.writeback_dest(transfer_params.base_reg, EBX);
-        } else if transfer_params.writeback {
-            self.writeback_dest(transfer_params.base_reg, EBX);
-        }
-
-        self.pop_flags();
+    fn ldrsh(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &OpData) {
+        let load_halfword = wrap_load_halfword::<M, T> as i64;
+        self.ext_ldr(transfer_params, data_reg, offset, load_halfword, |c| {
+            dynasm!(c.assembler
+                ; .arch x64
+                ; movsx eax, ax
+            );
+        });
     }
 
     fn str(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &ShiftOperand, byte: bool) {

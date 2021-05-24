@@ -788,7 +788,7 @@ fn test_load_word_imm_offset() {
             0xE1A0_F00E,    // MOV R15, R14
         ],
         data: vec![
-            0x12, 0x13, 0x14, 0x15,
+            0x82, 0x83, 0x84, 0x85,
             0x78, 0x56, 0x34, 0x12
         ]
     };
@@ -806,7 +806,7 @@ fn test_load_word_imm_offset() {
     
                 assert_eq!(cpu.read_reg(0), 0x1234_5678);
                 assert_eq!(cpu.read_reg(1), 0x1000_0000);
-                assert_eq!(cpu.read_reg(2), 0x1514_1312);
+                assert_eq!(cpu.read_reg(2), 0x8584_8382);
                 assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
                 assert_eq!(cpu.read_reg(4), 0x1234_5678);
                 assert_eq!(cpu.read_reg(5), 0x1000_0004);
@@ -826,7 +826,7 @@ fn test_load_word_reg_offset() {
             0xE1A0_F00E,    // MOV R15, R14
         ],
         data: vec![
-            0x12, 0x13, 0x14, 0x15,
+            0x82, 0x83, 0x84, 0x85,
             0x78, 0x56, 0x34, 0x12
         ]
     };
@@ -846,7 +846,7 @@ fn test_load_word_reg_offset() {
     
                 assert_eq!(cpu.read_reg(0), 0x1234_5678);
                 assert_eq!(cpu.read_reg(1), 0x1000_0000);
-                assert_eq!(cpu.read_reg(2), 0x1514_1312);
+                assert_eq!(cpu.read_reg(2), 0x8584_8382);
                 assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
                 assert_eq!(cpu.read_reg(4), 0x1234_5678);
                 assert_eq!(cpu.read_reg(5), 0x1000_0004);
@@ -926,7 +926,7 @@ fn test_load_byte() {
             0xE1A0_F00E,    // MOV R15, R14
         ],
         data: vec![
-            0x12, 0x13, 0x14, 0x15,
+            0x82, 0x83, 0x84, 0x85,
             0x78, 0x56, 0x34, 0x12
         ]
     };
@@ -944,7 +944,7 @@ fn test_load_byte() {
     
                 assert_eq!(cpu.read_reg(0), 0x78);
                 assert_eq!(cpu.read_reg(1), 0x1000_0002);
-                assert_eq!(cpu.read_reg(2), 0x12);
+                assert_eq!(cpu.read_reg(2), 0x82);
                 assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
                 assert_eq!(cpu.read_reg(4), 0x56);
                 assert_eq!(cpu.read_reg(5), 0x1000_0005);
@@ -1022,7 +1022,7 @@ fn test_load_halfword() {
             0xE1A0_F00E,    // MOV R15, R14
         ],
         data: vec![
-            0x12, 0x13, 0x14, 0x15,
+            0x82, 0x83, 0x84, 0x85,
             0x78, 0x56, 0x34, 0x12
         ]
     };
@@ -1040,10 +1040,88 @@ fn test_load_halfword() {
     
                 assert_eq!(cpu.read_reg(0), 0x5678);
                 assert_eq!(cpu.read_reg(1), 0x1000_0002);
-                assert_eq!(cpu.read_reg(2), 0x1312);
+                assert_eq!(cpu.read_reg(2), 0x8382);
                 assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
                 assert_eq!(cpu.read_reg(4), 0x1234);
                 assert_eq!(cpu.read_reg(5), 0x1000_0006);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_load_signed_halfword() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE1D1_00F2,    // LDRSH R0, [R1, +#2]
+            0xE053_20F4,    // LDRSH R2, [R3], -#4
+            0xE1F5_40F6,    // LDRSH R4, [R5, +#6]!
+            // TODO: reg offset
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: vec![
+            0x82, 0x83, 0x84, 0x85,
+            0x78, 0x56, 0x34, 0x12
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(1, 0x1000_0002);
+                cpu.write_reg(3, 0x1000_0000);
+                cpu.write_reg(5, 0x1000_0000);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0x5678);
+                assert_eq!(cpu.read_reg(1), 0x1000_0002);
+                assert_eq!(cpu.read_reg(2), 0xFFFF_8382);
+                assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
+                assert_eq!(cpu.read_reg(4), 0x1234);
+                assert_eq!(cpu.read_reg(5), 0x1000_0006);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_load_signed_byte() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE1D1_00D2,    // LDRSB R0, [R1, +#2]
+            0xE053_20D4,    // LDRSB R2, [R3], -#4
+            0xE1F5_40D5,    // LDRSB R4, [R5, +#5]!
+            // TODO: reg offset
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: vec![
+            0x82, 0x83, 0x84, 0x85,
+            0x78, 0x56, 0x34, 0x12
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(1, 0x1000_0002);
+                cpu.write_reg(3, 0x1000_0000);
+                cpu.write_reg(5, 0x1000_0000);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0x78);
+                assert_eq!(cpu.read_reg(1), 0x1000_0002);
+                assert_eq!(cpu.read_reg(2), 0xFFFF_FF82);
+                assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
+                assert_eq!(cpu.read_reg(4), 0x56);
+                assert_eq!(cpu.read_reg(5), 0x1000_0005);
             }
         },
         Err(e) => panic!("unexpected err {:?}", e)
