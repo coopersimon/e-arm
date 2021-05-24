@@ -1275,9 +1275,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         
         if !transfer_params.pre_index {
             self.addr_offset(EBX, transfer_params.inc, offset);
-        }
-
-        if transfer_params.writeback {
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        } else if transfer_params.writeback {
             self.writeback_dest(transfer_params.base_reg, EBX);
         }
 
@@ -1295,6 +1294,7 @@ pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(c
 }
 
 pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+    println!("Load from {:X}", addr);
     cpu.as_mut().unwrap().load_word(MemCycleType::N, addr)
 }
 
