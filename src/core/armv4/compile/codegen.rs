@@ -153,6 +153,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::SMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.smlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
 
                 ARMv4InstructionType::LDR{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset),
+                ARMv4InstructionType::STR{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset),
 
                 _ => panic!("not supported"),
             }
@@ -1282,6 +1283,62 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         self.pop_flags();
     }
+
+    fn str(&mut self, transfer_params: &TransferParams, data_reg: usize, offset: &ShiftOperand) {
+        self.push_flags();
+
+        let addr_reg = self.get_register(transfer_params.base_reg, EBX);
+        if addr_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(addr_reg)
+            );
+        }
+
+        if transfer_params.pre_index {
+            self.addr_offset(EBX, transfer_params.inc, offset);
+        }
+
+        let source_reg = self.get_register(data_reg, EDX);
+        if source_reg != EDX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov edx, Rd(source_reg)
+            );
+        }
+
+        let store_word = wrap_store_word::<M, T> as i64;
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov rcx, QWORD store_word
+            ; mov esi, ebx
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+
+            ; call rcx
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
+        );
+
+        // TODO: add clock [RAX]
+        
+        if !transfer_params.pre_index {
+            self.addr_offset(EBX, transfer_params.inc, offset);
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        } else if transfer_params.writeback {
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        }
+
+        self.pop_flags();
+    }
 }
 
 // CPU wrappers
@@ -1294,8 +1351,11 @@ pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(c
 }
 
 pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
-    println!("Load from {:X}", addr);
     cpu.as_mut().unwrap().load_word(MemCycleType::N, addr)
+}
+
+pub unsafe extern "Rust" fn wrap_store_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
+    cpu.as_mut().unwrap().store_word(MemCycleType::N, addr, data)
 }
 
 pub unsafe extern "Rust" fn wrap_clock<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, cycles: usize) {

@@ -857,3 +857,60 @@ fn test_load_word_reg_offset() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_store_word_imm_offset() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE581_0004,    // STR R0, [R1, +#4]
+            0xE403_2004,    // STR R2, [R3], -#4
+            0xE5A5_4004,    // STR R4, [R5, +#4]!
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: vec![
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+        ]
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0x1234_5678);
+                cpu.write_reg(1, 0x1000_0000);
+                cpu.write_reg(2, 0x2345_6789);
+                cpu.write_reg(3, 0x1000_0000);
+                cpu.write_reg(4, 0x9988_7766);
+                cpu.write_reg(5, 0x1000_0004);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0x1234_5678);
+                assert_eq!(cpu.read_reg(1), 0x1000_0000);
+                assert_eq!(cpu.read_reg(2), 0x2345_6789);
+                assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
+                assert_eq!(cpu.read_reg(4), 0x9988_7766);
+                assert_eq!(cpu.read_reg(5), 0x1000_0008);
+
+                assert_eq!(cpu.ref_mem().data[0], 0x89);
+                assert_eq!(cpu.ref_mem().data[1], 0x67);
+                assert_eq!(cpu.ref_mem().data[2], 0x45);
+                assert_eq!(cpu.ref_mem().data[3], 0x23);
+
+                assert_eq!(cpu.ref_mem().data[4], 0x78);
+                assert_eq!(cpu.ref_mem().data[5], 0x56);
+                assert_eq!(cpu.ref_mem().data[6], 0x34);
+                assert_eq!(cpu.ref_mem().data[7], 0x12);
+
+                assert_eq!(cpu.ref_mem().data[8], 0x66);
+                assert_eq!(cpu.ref_mem().data[9], 0x77);
+                assert_eq!(cpu.ref_mem().data[10], 0x88);
+                assert_eq!(cpu.ref_mem().data[11], 0x99);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
