@@ -20,7 +20,8 @@ use crate::{
         },
         ARMCondition,
         JITObject
-    }
+    },
+    common::u32
 };
 use super::DecodedInstruction;
 
@@ -118,6 +119,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             self.ret();
         } else {
             match &instruction.instruction.instr {
+                ARMv4InstructionType::SWI{comment} => unimplemented!(),
+                ARMv4InstructionType::UND => unimplemented!("UND not permitted for JITting"),
+
                 ARMv4InstructionType::MOV{rd, op2, set_flags} => self.mov(*rd, op2, *set_flags),
                 ARMv4InstructionType::MVN{rd, op2, set_flags} => self.mvn(*rd, op2, *set_flags),
                 ARMv4InstructionType::AND{rd, rn, op2, set_flags} => self.and(*rd, *rn, op2, *set_flags),
@@ -166,7 +170,19 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ARMv4InstructionType::LDRSH{transfer_params, data_reg, offset} => self.ldrsh(transfer_params, *data_reg, offset),
                 ARMv4InstructionType::STRH{transfer_params, data_reg, offset} => self.strh(transfer_params, *data_reg, offset),
 
-                _ => panic!("not supported"),
+                ARMv4InstructionType::LDM{transfer_params, reg_list, ..} => self.ldm(transfer_params, *reg_list),
+                ARMv4InstructionType::STM{transfer_params, reg_list, ..} => self.stm(transfer_params, *reg_list),
+
+                ARMv4InstructionType::MRC{..} |
+                ARMv4InstructionType::MCR{..} |
+                ARMv4InstructionType::CDP{..} |
+                ARMv4InstructionType::LDC{..} |
+                ARMv4InstructionType::STC{..} => unimplemented!("coprocessor commands cannot be compiled"),
+
+                ARMv4InstructionType::MSR{..} |
+                ARMv4InstructionType::MRS{..} => unreachable!("MSR and MRS are not permitted for JITting"),
+
+                //_ => panic!("not supported"),
             }
         }
 
@@ -1542,6 +1558,123 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         self.pop_flags();
     }
+
+    fn ldm(&mut self, transfer_params: &TransferParams, reg_list: u32) {
+        self.push_flags();
+
+        let addr_reg = self.get_register(transfer_params.base_reg, EBX);
+        if addr_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(addr_reg)
+            );
+        }
+
+        if !transfer_params.inc {
+            let offset = (reg_list.count_ones() * 4) as i32;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; sub ebx, WORD offset
+            );
+            if transfer_params.writeback {
+                self.writeback_dest(transfer_params.base_reg, EBX);
+            }
+        }
+
+        let pre_inc = transfer_params.pre_index == transfer_params.inc;
+        let load_word = wrap_load_word_force_align::<M, T> as i64;
+        for reg in (0..16).filter(|reg| u32::test_bit(reg_list, *reg)) {
+            if pre_inc {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; add ebx, WORD 4
+                );
+            }
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov esi, ebx
+            );
+            self.call(load_word);
+            if !pre_inc {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; add ebx, WORD 4
+                );
+            }
+
+            self.writeback_dest(reg, EAX);
+            // TODO: add clock [RDX]
+        }
+
+        if transfer_params.inc && transfer_params.writeback {
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        }
+
+        self.pop_flags();
+    }
+
+    fn stm(&mut self, transfer_params: &TransferParams, reg_list: u32) {
+        self.push_flags();
+
+        let addr_reg = self.get_register(transfer_params.base_reg, EBX);
+        if addr_reg != EBX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ebx, Rd(addr_reg)
+            );
+        }
+
+        if !transfer_params.inc {
+            let offset = (reg_list.count_ones() * 4) as i32;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; sub ebx, WORD offset
+            );
+            if transfer_params.writeback {
+                self.writeback_dest(transfer_params.base_reg, EBX);
+            }
+        }
+
+        let pre_inc = transfer_params.pre_index == transfer_params.inc;
+        let store_word = wrap_store_word::<M, T> as i64;
+        for reg in (0..16).filter(|reg| u32::test_bit(reg_list, *reg)) {
+            if pre_inc {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; add ebx, WORD 4
+                );
+            }
+
+            let source_reg = self.get_register(reg, EDX);
+            if source_reg != EDX {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov edx, Rd(source_reg)
+                );
+            }
+
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov esi, ebx
+            );
+            self.call(store_word);
+
+            // TODO: add clock [RAX]
+
+            if !pre_inc {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; add ebx, WORD 4
+                );
+            }
+        }
+        
+        if transfer_params.inc && transfer_params.writeback {
+            self.writeback_dest(transfer_params.base_reg, EBX);
+        }
+
+        self.pop_flags();
+    }
 }
 
 // CPU wrappers
@@ -1555,6 +1688,10 @@ pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(c
 
 pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
     cpu.as_mut().unwrap().load_word(MemCycleType::N, addr)
+}
+
+pub unsafe extern "Rust" fn wrap_load_word_force_align<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+    cpu.as_mut().unwrap().load_word_force_align(MemCycleType::N, addr)
 }
 
 pub unsafe extern "Rust" fn wrap_load_halfword<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u16, usize) {
