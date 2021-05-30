@@ -64,22 +64,32 @@ impl Validator {
             // Check if we have encountered any branch destinations.
             self.branches.remove(&self.current_addr);
             // Decode the next instruction.
-            let (i, cycles) = mem.load_word(MemCycleType::N, self.current_addr);
+            let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
             let decoded = decode_arm_v4(i);
             println!("Encountered i: {}", decoded);
 
             let mut instruction = DecodedInstruction {
                 instruction:    decoded.clone(),
-                fetch_cycles:   cycles,
+                cycles:         cycles + self.internal_cycles(&decoded.instr),
                 label:          None,
                 branch_to:      None,
                 ret:            false,
+                clock:          false,
             };
             // Take certain actions depending on the instruction...
             match &decoded.instr {
                 // Check the instruction is allowed:
                 ARMv4InstructionType::LDM{load_from_user: true, ..} |
                 ARMv4InstructionType::STM{load_from_user: true, ..} |
+                // TODO:
+                ARMv4InstructionType::SWI{..} |
+                ARMv4InstructionType::UND |
+
+                ARMv4InstructionType::MRC{..} |
+                ARMv4InstructionType::MCR{..} |
+                ARMv4InstructionType::CDP{..} |
+                ARMv4InstructionType::LDC{..} |
+                ARMv4InstructionType::STC{..} |
                 ARMv4InstructionType::MRS{..} |
                 ARMv4InstructionType::MSR{..} => return Err(CompilerError::IllegalInstruction),
 
@@ -286,6 +296,47 @@ impl Validator {
                 Ok(data_reg == constants::PC_REG)
             },
             _ => Err(CompilerError::DynamicStackManipulation),
+        }
+    }
+
+    // Get the number of internal cycles that an instruction uses.
+    fn internal_cycles(&self, instruction: &ARMv4InstructionType) -> usize {
+        const MUL_CYCLES: usize = 2;
+        match instruction {
+            ARMv4InstructionType::MUL{..} => MUL_CYCLES,
+            ARMv4InstructionType::MLA{..} => MUL_CYCLES + 1,
+            ARMv4InstructionType::UMULL{..} => MUL_CYCLES + 1,
+            ARMv4InstructionType::UMLAL{..} => MUL_CYCLES + 2,
+            ARMv4InstructionType::SMULL{..} => MUL_CYCLES + 1,
+            ARMv4InstructionType::SMLAL{..} => MUL_CYCLES + 2,
+
+            ARMv4InstructionType::SWP{..} |
+            ARMv4InstructionType::SWPB{..} |
+            ARMv4InstructionType::LDR{..} |
+            ARMv4InstructionType::LDRB{..} |
+            ARMv4InstructionType::LDRSB{..} |
+            ARMv4InstructionType::LDRH{..} |
+            ARMv4InstructionType::LDRSH{..} |
+            ARMv4InstructionType::LDM{..} => 1,
+
+            ARMv4InstructionType::MOV{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::MVN{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::AND{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::EOR{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::ORR{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::BIC{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::ADD{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::SUB{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::RSB{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::ADC{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::SBC{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::RSC{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::TST{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::TEQ{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::CMP{op2: ALUOperand::RegShift{..}, ..} |
+            ARMv4InstructionType::CMN{op2: ALUOperand::RegShift{..}, ..} => 1,
+
+            _ => 0,
         }
     }
 }

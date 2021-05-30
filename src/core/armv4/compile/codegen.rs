@@ -35,6 +35,7 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
 
     current_pc: u32,
+    current_cycles: usize,
 
     _unused_m: PhantomData<M>,
     _unused_t: PhantomData<T>
@@ -47,6 +48,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             label_table: std::collections::BTreeMap::new(),
 
             current_pc: 0,
+            current_cycles: 0,
 
             _unused_m: PhantomData,
             _unused_t: PhantomData
@@ -63,7 +65,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             // rdi = CPU
             ; push rbp
             ; mov rbp, rsp
-            ; sub rsp, 8    // Space for regs
+            ; sub rsp, 16    // Space for regs, cycles
             ; push rbx
             ; push r12
             ; push r13
@@ -85,7 +87,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov r14d, [rax+24]
             ; mov r15d, [rax+52]
 
-            ; mov [rbp-8], rax  // Put reg ptr on stack
+            ; mov [rbp-8], rax          // Put reg ptr on stack
+            ; mov QWORD [rbp-16], 0     // Cycles = 0
 
             // TODO: flags?
         );
@@ -98,6 +101,18 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     pub fn codegen(&mut self, instruction: &DecodedInstruction, pc_val: u32) {
         self.current_pc = pc_val;
+
+        if instruction.clock {
+            let clock = wrap_clock::<M, T> as i64;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov rdi, [rbp-16]
+            );
+            self.call(clock);
+            self.reset_cycles();
+        }
+        self.current_cycles += instruction.cycles;
+
         if let Some(label_id) = instruction.label {
             let label = self.get_label(label_id);
             dynasm!(self.assembler
@@ -115,75 +130,72 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         let skip_label = self.codegen_cond(instruction.instruction.cond);
 
+        match &instruction.instruction.instr {
+            ARMv4InstructionType::SWI{comment} => unimplemented!("SWI not implemented yet"),
+            ARMv4InstructionType::UND => unimplemented!("UND not permitted for JITting"),
+
+            ARMv4InstructionType::MOV{rd, op2, set_flags} => self.mov(*rd, op2, *set_flags),
+            ARMv4InstructionType::MVN{rd, op2, set_flags} => self.mvn(*rd, op2, *set_flags),
+            ARMv4InstructionType::AND{rd, rn, op2, set_flags} => self.and(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::EOR{rd, rn, op2, set_flags} => self.eor(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::ORR{rd, rn, op2, set_flags} => self.orr(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::BIC{rd, rn, op2, set_flags} => self.bic(*rd, *rn, op2, *set_flags),
+
+            ARMv4InstructionType::ADD{rd, rn, op2, set_flags} => self.add(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::SUB{rd, rn, op2, set_flags} => self.sub(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::RSB{rd, rn, op2, set_flags} => self.rsb(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::ADC{rd, rn, op2, set_flags} => self.adc(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::SBC{rd, rn, op2, set_flags} => self.sbc(*rd, *rn, op2, *set_flags),
+            ARMv4InstructionType::RSC{rd, rn, op2, set_flags} => self.rsc(*rd, *rn, op2, *set_flags),
+
+            ARMv4InstructionType::TST{rn, op2} => self.tst(*rn, op2),
+            ARMv4InstructionType::TEQ{rn, op2} => self.teq(*rn, op2),
+            ARMv4InstructionType::CMP{rn, op2} => self.cmp(*rn, op2),
+            ARMv4InstructionType::CMN{rn, op2} => self.cmn(*rn, op2),
+
+            ARMv4InstructionType::TADDPC{rd, op2} => self.taddpc(*rd, *op2),
+
+            ARMv4InstructionType::B{..} => unreachable!("this should have been generated earlier..."),
+            ARMv4InstructionType::TB{..} => unreachable!("this should have been generated earlier..."),
+            ARMv4InstructionType::BX{..} => unreachable!("this should only occur as a return..."),
+            ARMv4InstructionType::BL{offset} => self.bl(*offset),
+            ARMv4InstructionType::TBLLO{offset} => panic!("TODO: tbllo..."),
+            ARMv4InstructionType::TBLHI{offset} => self.bl(*offset),
+
+            ARMv4InstructionType::MUL{set_flags, rd, rs, rm} => self.mul(*rd, *rs, *rm, *set_flags),
+            ARMv4InstructionType::MLA{set_flags, rd, rn, rs, rm} => self.mla(*rd, *rn, *rs, *rm, *set_flags),
+            ARMv4InstructionType::UMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.umull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+            ARMv4InstructionType::UMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.umlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+            ARMv4InstructionType::SMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.smull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+            ARMv4InstructionType::SMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.smlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
+
+            ARMv4InstructionType::SWP{rn, rd, rm} => self.swp(*rn, *rd, *rm, false),
+            ARMv4InstructionType::SWPB{rn, rd, rm} => self.swp(*rn, *rd, *rm, true),
+
+            ARMv4InstructionType::TLDRPC{data_reg, offset} => self.tldrpc(*data_reg, *offset),
+            ARMv4InstructionType::LDR{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, false),
+            ARMv4InstructionType::STR{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, false),
+            ARMv4InstructionType::LDRB{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, true),
+            ARMv4InstructionType::STRB{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, true),
+            ARMv4InstructionType::LDRH{transfer_params, data_reg, offset} => self.ldrh(transfer_params, *data_reg, offset),
+            ARMv4InstructionType::LDRSB{transfer_params, data_reg, offset} => self.ldrsb(transfer_params, *data_reg, offset),
+            ARMv4InstructionType::LDRSH{transfer_params, data_reg, offset} => self.ldrsh(transfer_params, *data_reg, offset),
+            ARMv4InstructionType::STRH{transfer_params, data_reg, offset} => self.strh(transfer_params, *data_reg, offset),
+
+            ARMv4InstructionType::LDM{transfer_params, reg_list, ..} => self.ldm(transfer_params, *reg_list),
+            ARMv4InstructionType::STM{transfer_params, reg_list, ..} => self.stm(transfer_params, *reg_list),
+
+            ARMv4InstructionType::MRC{..} |
+            ARMv4InstructionType::MCR{..} |
+            ARMv4InstructionType::CDP{..} |
+            ARMv4InstructionType::LDC{..} |
+            ARMv4InstructionType::STC{..} => unimplemented!("coprocessor commands cannot be compiled"),
+
+            ARMv4InstructionType::MSR{..} |
+            ARMv4InstructionType::MRS{..} => unreachable!("MSR and MRS are not permitted for JITting"),
+        }
         if instruction.ret {
             self.ret();
-        } else {
-            match &instruction.instruction.instr {
-                ARMv4InstructionType::SWI{comment} => unimplemented!(),
-                ARMv4InstructionType::UND => unimplemented!("UND not permitted for JITting"),
-
-                ARMv4InstructionType::MOV{rd, op2, set_flags} => self.mov(*rd, op2, *set_flags),
-                ARMv4InstructionType::MVN{rd, op2, set_flags} => self.mvn(*rd, op2, *set_flags),
-                ARMv4InstructionType::AND{rd, rn, op2, set_flags} => self.and(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::EOR{rd, rn, op2, set_flags} => self.eor(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::ORR{rd, rn, op2, set_flags} => self.orr(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::BIC{rd, rn, op2, set_flags} => self.bic(*rd, *rn, op2, *set_flags),
-
-                ARMv4InstructionType::ADD{rd, rn, op2, set_flags} => self.add(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::SUB{rd, rn, op2, set_flags} => self.sub(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::RSB{rd, rn, op2, set_flags} => self.rsb(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::ADC{rd, rn, op2, set_flags} => self.adc(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::SBC{rd, rn, op2, set_flags} => self.sbc(*rd, *rn, op2, *set_flags),
-                ARMv4InstructionType::RSC{rd, rn, op2, set_flags} => self.rsc(*rd, *rn, op2, *set_flags),
-
-                ARMv4InstructionType::TST{rn, op2} => self.tst(*rn, op2),
-                ARMv4InstructionType::TEQ{rn, op2} => self.teq(*rn, op2),
-                ARMv4InstructionType::CMP{rn, op2} => self.cmp(*rn, op2),
-                ARMv4InstructionType::CMN{rn, op2} => self.cmn(*rn, op2),
-
-                ARMv4InstructionType::TADDPC{rd, op2} => self.taddpc(*rd, *op2),
-
-                ARMv4InstructionType::B{..} => unreachable!("this should have been generated earlier..."),
-                ARMv4InstructionType::TB{..} => unreachable!("this should have been generated earlier..."),
-                ARMv4InstructionType::BX{..} => unreachable!("this should only occur as a return..."),
-                ARMv4InstructionType::BL{offset} => self.bl(*offset),
-                ARMv4InstructionType::TBLLO{offset} => panic!("TODO: tbllo..."),
-                ARMv4InstructionType::TBLHI{offset} => self.bl(*offset),
-
-                ARMv4InstructionType::MUL{set_flags, rd, rs, rm} => self.mul(*rd, *rs, *rm, *set_flags),
-                ARMv4InstructionType::MLA{set_flags, rd, rn, rs, rm} => self.mla(*rd, *rn, *rs, *rm, *set_flags),
-                ARMv4InstructionType::UMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.umull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
-                ARMv4InstructionType::UMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.umlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
-                ARMv4InstructionType::SMULL{set_flags, rd_hi, rd_lo, rs, rm} => self.smull(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
-                ARMv4InstructionType::SMLAL{set_flags, rd_hi, rd_lo, rs, rm} => self.smlal(*rd_hi, *rd_lo, *rs, *rm, *set_flags),
-
-                ARMv4InstructionType::SWP{rn, rd, rm} => self.swp(*rn, *rd, *rm, false),
-                ARMv4InstructionType::SWPB{rn, rd, rm} => self.swp(*rn, *rd, *rm, true),
-
-                ARMv4InstructionType::TLDRPC{data_reg, offset} => self.tldrpc(*data_reg, *offset),
-                ARMv4InstructionType::LDR{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, false),
-                ARMv4InstructionType::STR{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, false),
-                ARMv4InstructionType::LDRB{transfer_params, data_reg, offset} => self.ldr(transfer_params, *data_reg, offset, true),
-                ARMv4InstructionType::STRB{transfer_params, data_reg, offset} => self.str(transfer_params, *data_reg, offset, true),
-                ARMv4InstructionType::LDRH{transfer_params, data_reg, offset} => self.ldrh(transfer_params, *data_reg, offset),
-                ARMv4InstructionType::LDRSB{transfer_params, data_reg, offset} => self.ldrsb(transfer_params, *data_reg, offset),
-                ARMv4InstructionType::LDRSH{transfer_params, data_reg, offset} => self.ldrsh(transfer_params, *data_reg, offset),
-                ARMv4InstructionType::STRH{transfer_params, data_reg, offset} => self.strh(transfer_params, *data_reg, offset),
-
-                ARMv4InstructionType::LDM{transfer_params, reg_list, ..} => self.ldm(transfer_params, *reg_list),
-                ARMv4InstructionType::STM{transfer_params, reg_list, ..} => self.stm(transfer_params, *reg_list),
-
-                ARMv4InstructionType::MRC{..} |
-                ARMv4InstructionType::MCR{..} |
-                ARMv4InstructionType::CDP{..} |
-                ARMv4InstructionType::LDC{..} |
-                ARMv4InstructionType::STC{..} => unimplemented!("coprocessor commands cannot be compiled"),
-
-                ARMv4InstructionType::MSR{..} |
-                ARMv4InstructionType::MRS{..} => unreachable!("MSR and MRS are not permitted for JITting"),
-
-                //_ => panic!("not supported"),
-            }
         }
 
         if let Some(label) = skip_label {
@@ -673,7 +685,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         extend(self);
 
         self.writeback_dest(data_reg, EAX);
-        // TODO: add clock [RDX]
+        self.add_dyn_cycles(EDX);
         
         if !transfer_params.pre_index {
             let offset = self.data_op(offset);
@@ -686,11 +698,33 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.pop_flags();
     }
 
+    /// Generate code to add to cycle count.
+    fn add_const_cycles(&mut self, cycles: usize) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add QWORD [rbp-16], cycles as i32
+        );
+    }
+
+    /// Generate code to add to cycle count from register.
+    fn add_dyn_cycles(&mut self, reg: u8) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add QWORD [rbp-16], Rq(reg)
+        );
+    }
+
+    /// Generate code to reset cycle count after clocking.
+    fn reset_cycles(&mut self) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov QWORD [rbp-16], 0
+        );
+    }
+
     /// Generate code for returning from subroutine.
     fn ret(&mut self) {
         println!("Gen return!");
-        let mut_regs = wrap_mut_regs::<M, T> as i64;
-
         dynasm!(self.assembler
             ; .arch x64
             // TODO: write back flags?
@@ -1341,7 +1375,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov esi, ebx
         );
         self.call(load_routine);
-        // TODO: add clock [RDX]
+        self.add_dyn_cycles(EDX);
 
         if byte {
             dynasm!(self.assembler
@@ -1363,14 +1397,14 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         let store_routine = if byte {
             wrap_store_byte::<M, T> as i64
         } else {
-            wrap_store_word::<M, T> as i64
+            wrap_store_word_n::<M, T> as i64
         };
         dynasm!(self.assembler
             ; .arch x64
             ; mov esi, ebx
         );
         self.call(store_routine);
-        // TODO: add clock [RAX]
+        self.add_dyn_cycles(EAX);
 
         self.pop_flags();
     }
@@ -1385,6 +1419,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov esi, DWORD addr
         );
         self.call(load_word);
+        self.add_dyn_cycles(EDX);
 
         self.writeback_dest(data_reg, EAX);
 
@@ -1426,7 +1461,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         self.writeback_dest(data_reg, EAX);
-        // TODO: add clock [RDX]
+        self.add_dyn_cycles(EDX);
         
         if !transfer_params.pre_index {
             let offset = self.shift_op(offset);
@@ -1496,14 +1531,14 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         let store_routine = if byte {
             wrap_store_byte::<M, T> as i64
         } else {
-            wrap_store_word::<M, T> as i64
+            wrap_store_word_n::<M, T> as i64
         };
         dynasm!(self.assembler
             ; .arch x64
             ; mov esi, ebx
         );
         self.call(store_routine);
-        // TODO: add clock [RAX]
+        self.add_dyn_cycles(EAX);
         
         if !transfer_params.pre_index {
             let offset = self.shift_op(offset);
@@ -1546,7 +1581,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov esi, ebx
         );
         self.call(store_halfword);
-        // TODO: add clock [RAX]
+        self.add_dyn_cycles(EAX);
         
         if !transfer_params.pre_index {
             let offset = self.data_op(offset);
@@ -1582,7 +1617,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         let pre_inc = transfer_params.pre_index == transfer_params.inc;
-        let load_word = wrap_load_word_force_align::<M, T> as i64;
+        let mut load_word = wrap_load_word_force_align_n::<M, T> as i64;
         for reg in (0..16).filter(|reg| u32::test_bit(reg_list, *reg)) {
             if pre_inc {
                 dynasm!(self.assembler
@@ -1603,7 +1638,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             }
 
             self.writeback_dest(reg, EAX);
-            // TODO: add clock [RDX]
+            self.add_dyn_cycles(EDX);
+
+            load_word = wrap_load_word_force_align_s::<M, T> as i64;
         }
 
         if transfer_params.inc && transfer_params.writeback {
@@ -1636,7 +1673,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         let pre_inc = transfer_params.pre_index == transfer_params.inc;
-        let store_word = wrap_store_word::<M, T> as i64;
+        let mut store_word = wrap_store_word_n::<M, T> as i64;
         for reg in (0..16).filter(|reg| u32::test_bit(reg_list, *reg)) {
             if pre_inc {
                 dynasm!(self.assembler
@@ -1658,8 +1695,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; mov esi, ebx
             );
             self.call(store_word);
-
-            // TODO: add clock [RAX]
+            self.add_dyn_cycles(EAX);
 
             if !pre_inc {
                 dynasm!(self.assembler
@@ -1667,6 +1703,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     ; add ebx, WORD 4
                 );
             }
+
+            store_word = wrap_store_word_s::<M, T> as i64;
         }
         
         if transfer_params.inc && transfer_params.writeback {
@@ -1690,8 +1728,12 @@ pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(
     cpu.as_mut().unwrap().load_word(MemCycleType::N, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_load_word_force_align<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+pub unsafe extern "Rust" fn wrap_load_word_force_align_n<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
     cpu.as_mut().unwrap().load_word_force_align(MemCycleType::N, addr)
+}
+
+pub unsafe extern "Rust" fn wrap_load_word_force_align_s<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+    cpu.as_mut().unwrap().load_word_force_align(MemCycleType::S, addr)
 }
 
 pub unsafe extern "Rust" fn wrap_load_halfword<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u16, usize) {
@@ -1702,8 +1744,12 @@ pub unsafe extern "Rust" fn wrap_load_byte<M: Mem32<Addr = u32>, T: ARMCore<M>>(
     cpu.as_mut().unwrap().load_byte(MemCycleType::N, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_store_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
+pub unsafe extern "Rust" fn wrap_store_word_n<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
     cpu.as_mut().unwrap().store_word(MemCycleType::N, addr, data)
+}
+
+pub unsafe extern "Rust" fn wrap_store_word_s<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
+    cpu.as_mut().unwrap().store_word(MemCycleType::S, addr, data)
 }
 
 pub unsafe extern "Rust" fn wrap_store_halfword<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u16) -> usize {

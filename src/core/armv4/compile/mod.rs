@@ -40,12 +40,14 @@ impl ARMv4Compiler {
 pub struct DecodedInstruction {
     /// The instruction itself.
     pub instruction: ARMv4Instruction,
-    /// Number of cycles needed to fetch the instruction.
-    pub fetch_cycles: usize,
+    /// Number of cycles needed to fetch the instruction + internal execution cycles.
+    pub cycles: usize,
     /// If this instruction needs a label emitted before it.
     pub label: Option<usize>,
     /// If this instruction branches somewhere.
     pub branch_to: Option<usize>,
     /// If this instruction should be treated as a return.
     pub ret: bool,
+    /// If this instruction should emit a clock call afterwards.
+    pub clock: bool,
 }
