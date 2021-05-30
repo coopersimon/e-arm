@@ -617,6 +617,118 @@ fn test_teq() {
 }
 
 #[test]
+fn test_cmp() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE150_0001,    // CMP R0, R1
+            0xD3A0_A00A,    // MOVLE R10, #10
+            0xC3A0_B00B,    // MOVGT R11, #11
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: Vec::new()
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 5);
+                cpu.write_reg(1, 4);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 5);
+                assert_eq!(cpu.read_reg(1), 4);
+                assert_eq!(cpu.read_reg(10), 0);
+                assert_eq!(cpu.read_reg(11), 11);
+            }
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 4);
+                cpu.write_reg(1, 4);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 4);
+                assert_eq!(cpu.read_reg(1), 4);
+                assert_eq!(cpu.read_reg(10), 10);
+                assert_eq!(cpu.read_reg(11), 0);
+            }
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0x1000_0000);
+                cpu.write_reg(1, 0x5000_0000);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0x1000_0000);
+                assert_eq!(cpu.read_reg(1), 0x5000_0000);
+                assert_eq!(cpu.read_reg(10), 10);
+                assert_eq!(cpu.read_reg(11), 0);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_cmn() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE170_0001,    // CMN R0, R1
+            0x23A0_A00A,    // MOVCS R10, #10
+            0xA3A0_B00B,    // MOVGE R11, #11
+            0xE1A0_F00E,    // MOV R15, R14
+        ],
+        data: Vec::new()
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 5);
+                cpu.write_reg(1, 4);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 5);
+                assert_eq!(cpu.read_reg(1), 4);
+                assert_eq!(cpu.read_reg(10), 0);
+                assert_eq!(cpu.read_reg(11), 11);
+            }
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 4);
+                cpu.write_reg(1, 4);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 4);
+                assert_eq!(cpu.read_reg(1), 4);
+                assert_eq!(cpu.read_reg(10), 0);
+                assert_eq!(cpu.read_reg(11), 11);
+            }
+            {
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                cpu.write_reg(0, 0xF000_0000);
+                cpu.write_reg(1, 0x1000_0000);
+    
+                routine.call(&mut cpu);
+    
+                assert_eq!(cpu.read_reg(0), 0xF000_0000);
+                assert_eq!(cpu.read_reg(1), 0x1000_0000);
+                assert_eq!(cpu.read_reg(10), 10);
+                assert_eq!(cpu.read_reg(11), 11);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
 fn test_internal_branch() {
     let mut mem = TestMem {
         instructions: vec![

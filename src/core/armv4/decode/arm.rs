@@ -270,6 +270,7 @@ fn decode_data_proc(i: u32) -> ARMv4InstructionType {
 
 /// Decodes extension mode instructions.
 /// This includes MRS, MSR and BX
+/// 
 /// This has multiple entry points so some data has already been decoded.
 fn decode_ext_mode(i: u32, rn: usize, rd: usize, msr: bool, spsr: bool) -> ARMv4InstructionType {
     if msr && (rd == 0xF) {
