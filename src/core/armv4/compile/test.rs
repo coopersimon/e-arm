@@ -1528,3 +1528,37 @@ fn test_store_multiple() {
         Err(e) => panic!("unexpected err {:?}", e)
     }
 }
+
+#[test]
+fn test_load_pc_relative() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE59F_0000,    // LDR R0, [R15]
+            0xE1A0_F00E,    // MOV R15, R14
+            0xABCD_EF01,    // some data
+            0x0000_0000,    // garbage
+        ],
+        data: Vec::new()
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            {
+                // Assert the same is true for our interpreter.
+                let mut sim_cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                sim_cpu.step();
+                sim_cpu.step();
+                sim_cpu.step();
+                sim_cpu.step();
+                assert_eq!(sim_cpu.read_reg(0), 0xABCD_EF01);
+
+                // Run JITted code.
+                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                routine.call(&mut cpu);
+                assert_eq!(cpu.read_reg(0), 0xABCD_EF01);
+            }
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
