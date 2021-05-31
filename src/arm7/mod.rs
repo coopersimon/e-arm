@@ -15,6 +15,7 @@ use crate::core::{
     decode_thumb_v4,
     Subroutine, RUN_THRESHOLD
 };
+use crate::common::u32;
 use crate::memory::{
     Mem32, MemCycleType
 };
@@ -233,7 +234,10 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         };
 
         match subroutine {
-            Some(s) => s.call(self),
+            Some(s) => {
+                s.call(self);
+                self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
+            },
             None => {
                 let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
                 loop {

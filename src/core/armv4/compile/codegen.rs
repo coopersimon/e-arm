@@ -18,6 +18,7 @@ use crate::{
             TransferParams,
             OpData
         },
+        constants,
         ARMCondition,
         JITObject
     },
@@ -37,6 +38,9 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     current_pc: u32,
     current_cycles: usize,
 
+    /// Offset from the first half of a tbl operation
+    tbl_offset: u32,
+
     _unused_m: PhantomData<M>,
     _unused_t: PhantomData<T>
 }
@@ -49,6 +53,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
             current_pc: 0,
             current_cycles: 0,
+
+            tbl_offset: 0,
 
             _unused_m: PhantomData,
             _unused_t: PhantomData
@@ -157,10 +163,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
             ARMv4InstructionType::B{..} => unreachable!("this should have been generated earlier..."),
             ARMv4InstructionType::TB{..} => unreachable!("this should have been generated earlier..."),
-            ARMv4InstructionType::BX{..} => unreachable!("this should only occur as a return..."),
+            ARMv4InstructionType::BX{reg} => self.bx(*reg),
             ARMv4InstructionType::BL{offset} => self.bl(*offset),
-            ARMv4InstructionType::TBLLO{offset} => panic!("TODO: tbllo..."),
-            ARMv4InstructionType::TBLHI{offset} => self.bl(*offset),
+            ARMv4InstructionType::TBLLO{offset} => self.tbl_lo(*offset),
+            ARMv4InstructionType::TBLHI{offset} => self.tbl_hi(*offset),
 
             ARMv4InstructionType::MUL{set_flags, rd, rs, rm} => self.mul(*rd, *rs, *rm, *set_flags),
             ARMv4InstructionType::MLA{set_flags, rd, rn, rs, rm} => self.mla(*rd, *rn, *rs, *rm, *set_flags),
@@ -241,7 +247,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         );
     }
 
-    /// Call a subroutine
+    /// Call a function.
     /// WARNING: Will destroy the value in RCX!
     /// Arguments in via rdi, rsi, rdx
     fn call(&mut self, subroutine: i64) {
@@ -262,6 +268,43 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; pop r9
             ; pop r8
             ; pop rdi
+        );
+    }
+
+    /// Call a subroutine.
+    /// 
+    /// This will go to the central JIT cache. It might lead to the interpreter,
+    /// or another JITted subroutine.
+    fn call_subroutine(&mut self, dest: u32) {
+        let call_sub = wrap_call_subroutine::<M, T> as i64;
+        dynasm!(self.assembler
+            ; .arch x64
+            // Write back registers
+            ; mov rbx, [rbp-8]
+            ; mov [rbx], r8d
+            ; mov [rbx+4], r9d
+            ; mov [rbx+8], r10d
+            ; mov [rbx+12], r11d
+            ; mov [rbx+16], r12d
+            ; mov [rbx+20], r13d
+            ; mov [rbx+24], r14d
+            ; mov [rbx+52], r15d
+
+            ; push rdi
+            ; mov rax, QWORD call_sub
+            ; mov esi, DWORD dest as i32
+            ; call rax
+            ; pop rdi
+
+            // Reload registers
+            ; mov r8d, [rbx]
+            ; mov r9d, [rbx+4]
+            ; mov r10d, [rbx+8]
+            ; mov r11d, [rbx+12]
+            ; mov r12d, [rbx+16]
+            ; mov r13d, [rbx+20]
+            ; mov r14d, [rbx+24]
+            ; mov r15d, [rbx+52]
         );
     }
 
@@ -377,7 +420,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     /// If the reg is the PC, it will generate code to write the immediate value into
     /// the specified register.
     fn alu_operand_1(&mut self, reg: usize, unmapped: u8) -> u8 {
-        if reg == 15 {
+        if reg == constants::PC_REG {
             let pc_const = self.current_pc as i32;
             dynasm!(self.assembler
                 ; .arch x64
@@ -446,7 +489,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn shift_op(&mut self, op: &ShiftOperand) -> DataOperand {
         match op {
             ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
-            ShiftOperand::Register(15) => DataOperand::Imm(self.current_pc as i32),
+            ShiftOperand::Register(constants::PC_REG) => DataOperand::Imm(self.current_pc as i32),
             ShiftOperand::Register(r) => DataOperand::Reg(self.get_register(*r, EAX)),
             ShiftOperand::LSL{shift_amount, reg} => {
                 let reg = self.get_register(*reg, EAX);
@@ -566,7 +609,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     /// 
     /// Puts it into "into" so that it can be offset.
     fn base_reg(&mut self, base_reg: usize, into: u8) {
-        if base_reg == 15 {
+        if base_reg == constants::PC_REG {
             let pc_const = self.current_pc as i32;
             dynasm!(self.assembler
                 ; .arch x64
@@ -974,7 +1017,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             )
         }
 
-        if rn == 15 {
+        if rn == constants::PC_REG {
             let pc_const = self.current_pc as i32;
             dynasm!(self.assembler
                 ; .arch x64
@@ -1010,7 +1053,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             )
         }
 
-        if rn == 15 {
+        if rn == constants::PC_REG {
             let pc_const = self.current_pc as i32;
             dynasm!(self.assembler
                 ; .arch x64
@@ -1103,7 +1146,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn taddpc(&mut self, rd: usize, op2: u32) {
-        let val = self.current_pc.wrapping_add(op2) as i32;
+        let val = (self.current_pc.wrapping_add(op2) & 0xFFFF_FFFC) as i32;
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(EBX);
         dynasm!(self.assembler
@@ -1365,16 +1408,29 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
+    /// BX: should only appear for returns.
+    fn bx(&mut self, reg: usize) {
+        let src_reg = self.get_register(reg, EAX);
+        self.writeback_unmapped_dest(constants::PC_REG, src_reg);
+    }
+
     fn bl(&mut self, offset: u32) {
-        self.push_flags();
-        let dest = self.current_pc.wrapping_add(offset) as i32;
-        let call_subroutine = wrap_call_subroutine::<M, T> as i64;
-        dynasm!(self.assembler
-            ; .arch x64
-            ; mov esi, DWORD dest
-        );
-        self.call(call_subroutine);
-        self.pop_flags();
+        //self.push_flags();
+        let dest = self.current_pc.wrapping_add(offset);
+        self.call_subroutine(dest);
+        //self.pop_flags();
+    }
+
+    fn tbl_lo(&mut self, offset: u32) {
+        self.tbl_offset = self.current_pc.wrapping_add(offset);
+    }
+
+    fn tbl_hi(&mut self, offset: u32) {
+        //self.push_flags();
+        let dest = self.tbl_offset.wrapping_add(offset);
+        self.tbl_offset = 0;
+        self.call_subroutine(dest);
+        //self.pop_flags();
     }
 
     fn swp(&mut self, rn: usize, rd: usize, rm: usize, byte: bool) {
@@ -1435,7 +1491,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn tldrpc(&mut self, data_reg: usize, offset: u32) {
         self.push_flags();
 
-        let addr = self.current_pc.wrapping_add(offset) as i32;
+        let pc = self.current_pc & 0xFFFF_FFFC;
+        let addr = pc.wrapping_add(offset) as i32;
         let load_word = wrap_load_word::<M, T> as i64;
         dynasm!(self.assembler
             ; .arch x64
