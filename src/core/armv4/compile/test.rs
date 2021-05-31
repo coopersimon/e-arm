@@ -238,14 +238,18 @@ fn test_add_shift() {
 fn test_imm_shifts() {
     let mut mem = TestMem {
         instructions: vec![
-            0xE1A0_5240,    // MOV R5, (R0 ASR #4)
-            0xE1A0_6220,    // MOV R6, (R0 LSR #4)
-            0xE1A0_7200,    // MOV R7, (R0 LSL #4)
-            0xE1A0_8461,    // MOV R8, (R1 ROR #8)
-            0xE1A0_9042,    // MOV R9, (R2 ASR #32)
-            // TODO: test carry
-            0xE1A0_A022,    // MOV R10, (R2 LSR #32)
-            // TODO: test carry
+            0xE1A0_5240,    // MOVS R5, (R0 ASR #4)
+            0x228B_B001,    // ADDCS R11, R11, #1
+            0xE1A0_6220,    // MOVS R6, (R0 LSR #4)
+            0x228B_B002,    // ADDCS R11, R11, #2
+            0xE1A0_7200,    // MOVS R7, (R0 LSL #4)
+            0x228B_B004,    // ADDCS R11, R11, #4
+            0xE1A0_8461,    // MOVS R8, (R1 ROR #8)
+            0x228B_B008,    // ADDCS R11, R11, #8
+            0xE1A0_9042,    // MOVS R9, (R2 ASR #32)
+            0x228B_B010,    // ADDCS R11, R11, #16
+            0xE1A0_A022,    // MOVS R10, (R2 LSR #32)
+            0x228B_B020,    // ADDCS R11, R11, #32
             0xE1A0_F00E,    // MOV R15, R14
         ],
         data: Vec::new()
@@ -267,6 +271,7 @@ fn test_imm_shifts() {
             assert_eq!(cpu.read_reg(8), 0xB5A0_A0B5);
             assert_eq!(cpu.read_reg(9), 0xFFFF_FFFF);
             assert_eq!(cpu.read_reg(10), 0x0000_0000);
+            assert_eq!(cpu.read_reg(11), 0x0000_003C);
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }

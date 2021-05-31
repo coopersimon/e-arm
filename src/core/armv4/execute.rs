@@ -96,8 +96,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
 
     /// ROR
     /// Rotate right
-    fn ror(&mut self, val: u32, shift_amount: u32) -> u32 {
-        val.rotate_right(shift_amount)
+    fn ror(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
+        let result = val.rotate_right(shift_amount);
+        if set_carry {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::C, test_bit(result, 31));
+            self.write_flags(cpsr);
+        }
+        result
     }
 
     /// RRX
@@ -1102,7 +1108,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                     } else {
                         self.asr_32(set_carry, shift)
                     },
-                    ROR => self.ror(shift, shift_amount),
+                    ROR => self.ror(set_carry, shift, shift_amount),
                 }, 1)
             }
         }
@@ -1120,7 +1126,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             LSL{shift_amount, reg} => self.lsl(set_carry, self.read_reg(reg), shift_amount),
             LSR{shift_amount, reg} => self.lsr(set_carry, self.read_reg(reg), shift_amount),
             ASR{shift_amount, reg} => self.asr(set_carry, self.read_reg(reg), shift_amount),
-            ROR{shift_amount, reg} => self.ror(self.read_reg(reg), shift_amount),
+            ROR{shift_amount, reg} => self.ror(set_carry, self.read_reg(reg), shift_amount),
             LSR32{reg} => self.lsr_32(set_carry, self.read_reg(reg)),
             ASR32{reg} => self.asr_32(set_carry, self.read_reg(reg)),
             RRX{reg} => self.rrx(set_carry, self.read_reg(reg)),
