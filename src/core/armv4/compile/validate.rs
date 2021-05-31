@@ -54,7 +54,8 @@ impl Validator {
         }
     }
 
-    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, mem: &mut M) -> Result<Vec<DecodedInstruction>, CompilerError> {
+    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
+        let i_size = if thumb {constants::T_SIZE} else {constants::I_SIZE};
         let mut instructions = Vec::new();
         let mut labels = BTreeMap::new();
         let mut label_idx = 0;
@@ -64,8 +65,13 @@ impl Validator {
             // Check if we have encountered any branch destinations.
             self.branches.remove(&self.current_addr);
             // Decode the next instruction.
-            let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
-            let decoded = decode_arm_v4(i);
+            let (decoded, cycles) = if thumb {
+                let (i, cycles) = mem.load_halfword(MemCycleType::S, self.current_addr);
+                (decode_thumb_v4(i), cycles)
+            } else {
+                let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
+                (decode_arm_v4(i), cycles)
+            };
             println!("Encountered i: {}", decoded);
 
             let mut instruction = DecodedInstruction {
@@ -95,7 +101,8 @@ impl Validator {
 
                 // Take a note of internal branch destinations:
                 ARMv4InstructionType::B{offset} => {
-                    let dest = self.validate_branch(*offset)?;
+                    let final_offset = offset.wrapping_add(i_size * 2);
+                    let dest = self.validate_branch(final_offset)?;
                     instruction.branch_to = Some(label_idx);
                     labels.insert(dest, label_idx);
                     label_idx += 1;
@@ -108,7 +115,7 @@ impl Validator {
                         instruction.ret = true;
                         if self.branches.is_empty() {
                             instructions.push(instruction);
-                            return self.resolve_labels(instructions, labels);
+                            return self.resolve_labels(instructions, labels, i_size);
                         }
                     } else {
                         self.current_meta.ret = ReturnLocation::Reg(*rd);
@@ -126,7 +133,7 @@ impl Validator {
                         instruction.ret = true;
                         if self.branches.is_empty() {
                             instructions.push(instruction);
-                            return self.resolve_labels(instructions, labels);
+                            return self.resolve_labels(instructions, labels, i_size);
                         }
                     }
                 },
@@ -136,7 +143,7 @@ impl Validator {
                         instruction.ret = true;
                         if self.branches.is_empty() {
                             instructions.push(instruction);
-                            return self.resolve_labels(instructions, labels);
+                            return self.resolve_labels(instructions, labels, i_size);
                         }
                     }
                 },
@@ -147,7 +154,7 @@ impl Validator {
                     // We only return if we have covered all the possible branches, and the return value is written to PC.
                     if self.branches.is_empty() {
                         instructions.push(instruction);
-                        return self.resolve_labels(instructions, labels);
+                        return self.resolve_labels(instructions, labels, i_size);
                     }
                 } else {
                     // Only return BX instructions are allowed.
@@ -179,7 +186,7 @@ impl Validator {
             }
 
             // Check the subroutine isn't too long.
-            self.current_addr += constants::I_SIZE;
+            self.current_addr += i_size;
             if self.current_addr >= self.end_addr {
                 return Err(CompilerError::TooLong);
             }
@@ -191,9 +198,9 @@ impl Validator {
 
 impl Validator {
     // Resolve label destinations.
-    fn resolve_labels(&self, mut instructions: Vec<DecodedInstruction>, labels: BTreeMap<u32, usize>) -> Result<Vec<DecodedInstruction>, CompilerError> {
+    fn resolve_labels(&self, mut instructions: Vec<DecodedInstruction>, labels: BTreeMap<u32, usize>, i_size: u32) -> Result<Vec<DecodedInstruction>, CompilerError> {
         for (label_addr, label_idx) in labels.iter() {
-            let i = (label_addr - self.start_addr) / constants::I_SIZE;
+            let i = (label_addr - self.start_addr) / i_size;
             instructions[i as usize].label = Some(*label_idx);
         }
 
@@ -202,7 +209,7 @@ impl Validator {
 
     // Return dest address.
     fn validate_branch(&mut self, offset: u32) -> Result<u32, CompilerError> {
-        let dest = self.current_addr.wrapping_add(offset).wrapping_add(8);
+        let dest = self.current_addr.wrapping_add(offset);
         if dest < self.start_addr {
             return Err(CompilerError::BranchBeforeStart);
         } else if dest >= self.end_addr {

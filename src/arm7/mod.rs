@@ -182,7 +182,12 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
 
     fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
         let mut compiler = ARMv4Compiler::new();
-        match compiler.compile::<M, Self>(from, &mut self.mem) {
+        let result = if self.cpsr.contains(CPSR::T) {
+            compiler.compile_thumb::<M, Self>(from, &mut self.mem)
+        } else {
+            compiler.compile_arm::<M, Self>(from, &mut self.mem)
+        };
+        match result {
             Ok(s) => Subroutine::Compiled(s),
             Err(_) => Subroutine::CannotCompile
         }

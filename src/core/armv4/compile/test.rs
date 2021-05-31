@@ -90,7 +90,7 @@ fn test_add_imm() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -112,7 +112,7 @@ fn test_add_reg() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -135,7 +135,7 @@ fn test_add_reg_2() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -165,7 +165,7 @@ fn test_multi_add() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -211,7 +211,7 @@ fn test_add_shift() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -251,7 +251,7 @@ fn test_imm_shifts() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -291,7 +291,7 @@ fn test_reg_shifts() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<TestMem>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -324,7 +324,7 @@ fn test_sub_rsb() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -355,7 +355,7 @@ fn test_logic() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -386,7 +386,7 @@ fn test_cond_eq() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             // TODO: test with multiple args
@@ -415,7 +415,7 @@ fn test_cond_carry() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             // TODO: test with multiple args
@@ -446,7 +446,7 @@ fn test_long_add() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -479,7 +479,7 @@ fn test_long_sub() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -512,7 +512,7 @@ fn test_bic() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -539,7 +539,7 @@ fn test_mvn() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
@@ -566,7 +566,7 @@ fn test_tst() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             // TODO: test with multiple args
@@ -597,7 +597,7 @@ fn test_teq() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             // TODO: test with multiple args
@@ -628,7 +628,7 @@ fn test_cmp() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -684,7 +684,7 @@ fn test_cmn() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -742,7 +742,7 @@ fn test_internal_branch() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -782,7 +782,7 @@ fn test_multiply() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -816,7 +816,7 @@ fn test_long_unsigned_multiply() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -859,7 +859,7 @@ fn test_long_signed_multiply() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -905,7 +905,7 @@ fn test_load_word_imm_offset() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -943,7 +943,7 @@ fn test_load_word_reg_offset() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -986,7 +986,7 @@ fn test_store_word_imm_offset() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1043,7 +1043,7 @@ fn test_load_byte() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1082,7 +1082,7 @@ fn test_store_byte() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1139,7 +1139,7 @@ fn test_load_halfword() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1178,7 +1178,7 @@ fn test_load_signed_halfword() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1217,7 +1217,7 @@ fn test_load_signed_byte() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1256,7 +1256,7 @@ fn test_store_halfword() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1311,7 +1311,7 @@ fn test_swp_word() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1359,7 +1359,7 @@ fn test_swp_byte() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1411,7 +1411,7 @@ fn test_load_multiple() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1455,7 +1455,7 @@ fn test_store_multiple() {
         ]
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
@@ -1541,7 +1541,7 @@ fn test_load_pc_relative() {
         data: Vec::new()
     };
     let mut compiler = super::ARMv4Compiler::new();
-    let routine = compiler.compile::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
             {
