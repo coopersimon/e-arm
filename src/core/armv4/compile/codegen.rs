@@ -1317,10 +1317,12 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
                 ; cmp Rd(op1_reg), DWORD i
+                ; cmc
             ),
             DataOperand::Reg(r) => dynasm!(self.assembler
                 ; .arch x64
                 ; cmp Rd(op1_reg), Rd(r)
+                ; cmc
             )
         }
     }
