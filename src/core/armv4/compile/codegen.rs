@@ -1158,7 +1158,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     ; sub Rd(op1), Rd(r)
                 )
             }
-        })
+        });
+        if set_flags {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; cmc
+            )
+        }
     }
 
     fn sbc(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
@@ -1166,14 +1172,22 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
+                    ; cmc
                     ; sbb Rd(op1), DWORD i
                 ),
                 DataOperand::Reg(r) => dynasm!(c.assembler
                     ; .arch x64
+                    ; cmc
                     ; sbb Rd(op1), Rd(r)
                 )
             }
-        })
+        });
+        if set_flags {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; cmc
+            )
+        }
     }
 
     fn rsb(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
@@ -1209,6 +1223,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.writeback_dest(rd, EBX);
         if !set_flags {
             self.pop_flags();
+        } else {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; cmc
+            )
         }
     }
 
@@ -1232,12 +1251,14 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             let pc_const = self.current_pc as i32;
             dynasm!(self.assembler
                 ; .arch x64
+                ; cmc
                 ; sbb ebx, DWORD pc_const
             );
         } else {
             let op1_reg = self.get_register(rn, EAX);
             dynasm!(self.assembler
                 ; .arch x64
+                ; cmc
                 ; sbb ebx, Rd(op1_reg)
             );
         }
@@ -1245,6 +1266,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.writeback_dest(rd, EBX);
         if !set_flags {
             self.pop_flags();
+        } else {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; cmc
+            )
         }
     }
 

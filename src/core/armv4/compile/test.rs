@@ -509,7 +509,11 @@ fn test_long_sub() {
     let mut mem = TestMem {
         instructions: vec![
             0xE050_8004,    // SUBS R8, R0, R4
-            0xE0C1_9005,    // SBC R9, R1, R5
+            0x23A0_A001,    // MOVCS R10, #1
+            0x33A0_B001,    // MOVCC R11, #1
+            0xE0D1_9005,    // SBCS R9, R1, R5
+            0x23A0_C001,    // MOVCS R12, #1
+            0x33A0_D001,    // MOVCC R13, #1
             0xE1A0_F00E,    // MOV R15, R14
             0x0,
             0x0
@@ -526,7 +530,11 @@ fn test_long_sub() {
                 [4, 0x9999_9999u32, 0x9999_9999u32],
                 [5, 0x1, 0x1],
                 [8, 0, 0xEEEE_EEEFu32],
-                [9, 0, 0x0]
+                [9, 0, 0x0],
+                [10, 0, 0x0],
+                [11, 0, 0x1],
+                [12, 0, 0x1],
+                [13, 0, 0x0]
             );
         },
         Err(e) => panic!("unexpected err {:?}", e)
