@@ -271,43 +271,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         );
     }
 
-    /// Call a subroutine.
-    /// 
-    /// This will go to the central JIT cache. It might lead to the interpreter,
-    /// or another JITted subroutine.
-    fn call_subroutine(&mut self, dest: u32) {
-        let call_sub = wrap_call_subroutine::<M, T> as i64;
-        dynasm!(self.assembler
-            ; .arch x64
-            // Write back registers
-            ; mov rbx, [rbp-8]
-            ; mov [rbx], r8d
-            ; mov [rbx+4], r9d
-            ; mov [rbx+8], r10d
-            ; mov [rbx+12], r11d
-            ; mov [rbx+16], r12d
-            ; mov [rbx+20], r13d
-            ; mov [rbx+24], r14d
-            ; mov [rbx+52], r15d
-
-            ; push rdi
-            ; mov rax, QWORD call_sub
-            ; mov esi, DWORD dest as i32
-            ; call rax
-            ; pop rdi
-
-            // Reload registers
-            ; mov r8d, [rbx]
-            ; mov r9d, [rbx+4]
-            ; mov r10d, [rbx+8]
-            ; mov r11d, [rbx+12]
-            ; mov r12d, [rbx+16]
-            ; mov r13d, [rbx+20]
-            ; mov r14d, [rbx+24]
-            ; mov r15d, [rbx+52]
-        );
-    }
-
     /// Generate condition branch.
     fn codegen_cond(&mut self, condition: ARMCondition) -> Option<DynamicLabel> {
         match condition {
@@ -416,6 +379,155 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         })
     }
 
+    /// Convert OpData to DataOperand.
+    fn data_op(&mut self, op: &OpData) -> DataOperand {
+        match op {
+            OpData::Immediate(i) => DataOperand::Imm(*i as i32),
+            OpData::Register(r) => DataOperand::Reg(self.get_register(*r, EAX)),
+        }
+    }
+
+    /// Get the base reg for a load/store.
+    /// 
+    /// Puts it into "into" so that it can be offset.
+    fn base_reg(&mut self, base_reg: usize, into: u8) {
+        if base_reg == constants::PC_REG {
+            let pc_const = self.current_pc as i32;
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov Rd(into), DWORD pc_const
+            );
+        } else {
+            let real_reg = self.get_register(base_reg, EBX);
+            if real_reg != into {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov Rd(into), Rd(real_reg)
+                );
+            }
+        }
+    }
+
+    /// Calculate the address +/- offset for a load or store (word or byte).
+    fn addr_offset(&mut self, base_reg: u8, inc: bool, offset: DataOperand) {
+        if inc {
+            match offset {
+                DataOperand::Imm(0) => {},
+                DataOperand::Imm(i) => dynasm!(self.assembler
+                    ; .arch x64
+                    ; add Rd(base_reg), DWORD i
+                ),
+                DataOperand::Reg(r) => dynasm!(self.assembler
+                    ; .arch x64
+                    ; add Rd(base_reg), Rd(r)
+                ),
+            }
+        } else {
+            match offset {
+                DataOperand::Imm(0) => {},
+                DataOperand::Imm(i) => dynasm!(self.assembler
+                    ; .arch x64
+                    ; sub Rd(base_reg), DWORD i
+                ),
+                DataOperand::Reg(r) => dynasm!(self.assembler
+                    ; .arch x64
+                    ; sub Rd(base_reg), Rd(r)
+                ),
+            }
+        }
+    }
+
+    /// Write the value back to the dest register.
+    /// Rd = Virtual ARM register
+    /// From = x86 register
+    fn writeback_dest(&mut self, rd: usize, from: u8) {
+        match self.get_mapped_register(rd) {
+            Some(reg) => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov Rd(reg), Rd(from)
+                );
+            },
+            None => self.writeback_unmapped_dest(rd, from),
+        }
+    }
+
+    /// Writeback an unmapped dest register to memory.
+    /// 
+    /// WARNING: this will destroy the value in RCX!
+    fn writeback_unmapped_dest(&mut self, rd: usize, from: u8) {
+        let reg_offset = (rd * 4) as i32;
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov rcx, [rbp-8]
+            ; mov [rcx+reg_offset], Rd(from)
+        );
+    }
+
+    /// Generate code for returning from subroutine.
+    fn ret(&mut self) {
+        println!("Gen return!");
+        dynasm!(self.assembler
+            ; .arch x64
+            // TODO: write back flags?
+
+            // Write back regs
+            ; mov rax, [rbp-8]
+
+            ; mov [rax], r8d
+            ; mov [rax+4], r9d
+            ; mov [rax+8], r10d
+            ; mov [rax+12], r11d
+            ; mov [rax+16], r12d
+            ; mov [rax+20], r13d
+            ; mov [rax+24], r14d
+            ; mov [rax+52], r15d
+
+            // Restore
+            ; pop r15
+            ; pop r14
+            ; pop r13
+            ; pop r12
+            ; pop rbx
+            ; mov rsp, rbp
+            ; pop rbp
+
+            ; ret
+        );
+    }
+}
+
+// Manipulating cycles
+impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+    /// Generate code to add to cycle count.
+    fn add_const_cycles(&mut self, cycles: usize) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add QWORD [rbp-16], cycles as i32
+        );
+    }
+
+    /// Generate code to add to cycle count from register.
+    fn add_dyn_cycles(&mut self, reg: u8) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; add QWORD [rbp-16], Rq(reg)
+        );
+    }
+
+    /// Generate code to reset cycle count after clocking.
+    fn reset_cycles(&mut self) {
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov QWORD [rbp-16], 0
+        );
+    }
+}
+
+// Operands for data instructions.
+// Includes shifts.
+impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+
     /// Get the first register for an ALU operation.
     /// If the reg is the PC, it will generate code to write the immediate value into
     /// the specified register.
@@ -434,59 +546,24 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     /// Code-gen for an ALU operand.
     /// Returns the type of operand for the operation.
-    fn alu_operand_2(&mut self, op: &ALUOperand) -> DataOperand {
+    fn alu_operand_2(&mut self, op: &ALUOperand, shift_carry: bool) -> DataOperand {
         match op {
-            ALUOperand::Normal(op) => self.shift_op(op),
-            ALUOperand::RegShift{op, shift_reg, reg} => {
-                let data_reg = self.get_register(*reg, EAX);
-                if data_reg != EAX {
-                    dynasm!(self.assembler
-                        ; .arch x64
-                        ; mov eax, Rd(data_reg)
-                    );
-                }
-                let shift_reg = self.get_register(*shift_reg, ECX);
-                // The shift needs to be in register C.
-                if shift_reg != ECX {
-                    dynasm!(self.assembler
-                        ; .arch x64
-                        ; mov ecx, Rd(shift_reg)
-                    );
-                }
-                match op {
-                    RegShiftOperand::LSL => {
-                        dynasm!(self.assembler
-                            ; .arch x64
-                            ; shl eax, cl
-                        );
-                    },
-                    RegShiftOperand::LSR => {
-                        dynasm!(self.assembler
-                            ; .arch x64
-                            ; shr eax, cl
-                        );
-                    },
-                    RegShiftOperand::ASR => {
-                        dynasm!(self.assembler
-                            ; .arch x64
-                            ; sar eax, cl
-                        );
-                    },
-                    RegShiftOperand::ROR => {
-                        dynasm!(self.assembler
-                            ; .arch x64
-                            ; ror eax, cl
-                        );
-                    },
-                }
-                DataOperand::Reg(EAX)
-            }
+            ALUOperand::Normal(op) => if shift_carry {
+                self.shift_op_with_carry(op)
+            } else {
+                self.shift_op_no_carry(op)
+            },
+            ALUOperand::RegShift{op, shift_reg, reg} => DataOperand::Reg(if shift_carry {
+                self.register_shift_with_carry(op, *shift_reg, *reg)
+            } else {
+                self.register_shift_no_carry(op, *shift_reg, *reg)
+            })
         }
     }
 
     /// Code gen for a shift operand.
     /// Used for 2nd ALU ops and memory offsets.
-    fn shift_op(&mut self, op: &ShiftOperand) -> DataOperand {
+    fn shift_op_with_carry(&mut self, op: &ShiftOperand) -> DataOperand {
         match op {
             ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
             ShiftOperand::Register(constants::PC_REG) => DataOperand::Imm(self.current_pc as i32),
@@ -597,94 +674,194 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
-    /// Convert OpData to DataOperand.
-    fn data_op(&mut self, op: &OpData) -> DataOperand {
+    /// Same as shift_op_with_carry except the carry flag will remain unchanged.
+    fn shift_op_no_carry(&mut self, op: &ShiftOperand) -> DataOperand {
         match op {
-            OpData::Immediate(i) => DataOperand::Imm(*i as i32),
-            OpData::Register(r) => DataOperand::Reg(self.get_register(*r, EAX)),
+            ShiftOperand::Immediate(i) => DataOperand::Imm(*i as i32),
+            ShiftOperand::Register(constants::PC_REG) => DataOperand::Imm(self.current_pc as i32),
+            ShiftOperand::Register(r) => DataOperand::Reg(self.get_register(*r, EAX)),
+            ShiftOperand::LSL{shift_amount, reg} => {
+                let reg = self.get_register(*reg, EAX);
+                let shift_val = *shift_amount as i32;
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov ecx, DWORD shift_val
+                    ; shlx eax, Rd(reg), ecx
+                );
+                DataOperand::Reg(EAX)
+            },
+            ShiftOperand::LSR{shift_amount, reg} => {
+                let reg = self.get_register(*reg, EAX);
+                let shift_val = *shift_amount as i32;
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov ecx, DWORD shift_val
+                    ; shrx eax, Rd(reg), ecx
+                );
+                DataOperand::Reg(EAX)
+            },
+            ShiftOperand::ASR{shift_amount, reg} => {
+                let reg = self.get_register(*reg, EAX);
+                let shift_val = *shift_amount as i32;
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov ecx, DWORD shift_val
+                    ; sarx eax, Rd(reg), ecx
+                );
+                DataOperand::Reg(EAX)
+            },
+            ShiftOperand::ROR{shift_amount, reg} => {
+                let reg = self.get_register(*reg, EAX);
+                let shift_val = *shift_amount as i8;
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; rorx eax, Rd(reg), shift_val
+                );
+                DataOperand::Reg(EAX)
+            },
+            ShiftOperand::LSR32{reg} => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov eax, 0
+                );
+                DataOperand::Reg(EAX)
+            },
+            ShiftOperand::ASR32{reg} => {
+                let reg = self.get_register(*reg, EAX);
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; mov ecx, DWORD 31
+                    ; sarx eax, Rd(reg), ecx
+                );
+                DataOperand::Reg(EAX)
+            },
+            ShiftOperand::RRX{reg} => {
+                let reg = self.get_register(*reg, EAX);
+                if reg != EAX {
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; mov eax, Rd(reg)
+                    );
+                }
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; pushf
+                    ; rcr eax, 1
+                    ; popf
+                );
+                DataOperand::Reg(EAX)
+            },
         }
     }
 
-    /// Get the base reg for a load/store.
+    /// Generate code for a register shift op.
+    /// This will ensure the carry flag is set afterwards.
     /// 
-    /// Puts it into "into" so that it can be offset.
-    fn base_reg(&mut self, base_reg: usize, into: u8) {
-        if base_reg == constants::PC_REG {
-            let pc_const = self.current_pc as i32;
+    /// Return the register of the final data.
+    fn register_shift_with_carry(&mut self, op: &RegShiftOperand, shift_reg: usize, reg: usize) -> u8 {
+        let data_reg = self.get_register(reg, EAX);
+        if data_reg != EAX {
             dynasm!(self.assembler
                 ; .arch x64
-                ; mov Rd(into), DWORD pc_const
+                ; mov eax, Rd(data_reg)
             );
-        } else {
-            let real_reg = self.get_register(base_reg, EBX);
-            if real_reg != into {
+        }
+        let shift_reg = self.get_register(shift_reg, ECX);
+        // The shift needs to be in register C.
+        if shift_reg != ECX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ecx, Rd(shift_reg)
+            );
+        }
+        match op {
+            RegShiftOperand::LSL => {
                 dynasm!(self.assembler
                     ; .arch x64
-                    ; mov Rd(into), Rd(real_reg)
-                );
-            }
-        }
-    }
-
-    /// Calculate the address +/- offset for a load or store (word or byte).
-    fn addr_offset(&mut self, base_reg: u8, inc: bool, offset: DataOperand) {
-        if inc {
-            match offset {
-                DataOperand::Imm(0) => {},
-                DataOperand::Imm(i) => dynasm!(self.assembler
-                    ; .arch x64
-                    ; add Rd(base_reg), DWORD i
-                ),
-                DataOperand::Reg(r) => dynasm!(self.assembler
-                    ; .arch x64
-                    ; add Rd(base_reg), Rd(r)
-                ),
-            }
-        } else {
-            match offset {
-                DataOperand::Imm(0) => {},
-                DataOperand::Imm(i) => dynasm!(self.assembler
-                    ; .arch x64
-                    ; sub Rd(base_reg), DWORD i
-                ),
-                DataOperand::Reg(r) => dynasm!(self.assembler
-                    ; .arch x64
-                    ; sub Rd(base_reg), Rd(r)
-                ),
-            }
-        }
-    }
-
-    /// Write the value back to the dest register.
-    /// Rd = Virtual ARM register
-    /// From = x86 register
-    fn writeback_dest(&mut self, rd: usize, from: u8) {
-        match self.get_mapped_register(rd) {
-            Some(reg) => {
-                dynasm!(self.assembler
-                    ; .arch x64
-                    ; mov Rd(reg), Rd(from)
+                    ; shl eax, cl
                 );
             },
-            None => self.writeback_unmapped_dest(rd, from),
+            RegShiftOperand::LSR => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; shr eax, cl
+                );
+            },
+            RegShiftOperand::ASR => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; sar eax, cl
+                );
+            },
+            RegShiftOperand::ROR => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; ror eax, cl
+                );
+            },
         }
+        EAX
     }
 
-    /// Writeback an unmapped dest register to memory.
+    /// Generate code for a register shift op.
+    /// This will ensure the carry flag is unchanged.
     /// 
-    /// WARNING: this will destroy the value in RCX!
-    fn writeback_unmapped_dest(&mut self, rd: usize, from: u8) {
-        let reg_offset = (rd * 4) as i32;
-        dynasm!(self.assembler
-            ; .arch x64
-            ; mov rcx, [rbp-8]
-            ; mov [rcx+reg_offset], Rd(from)
-        );
+    /// Return the register of the final data.
+    fn register_shift_no_carry(&mut self, op: &RegShiftOperand, shift_reg: usize, reg: usize) -> u8 {
+        let data_reg = self.get_register(reg, EAX);
+        let shift_reg = self.get_register(shift_reg, ECX);
+        // The shift needs to be in register C.
+        if shift_reg != ECX {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; mov ecx, Rd(shift_reg)
+            );
+        }
+        match op {
+            RegShiftOperand::LSL => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; shlx eax, Rd(data_reg), ecx
+                );
+            },
+            RegShiftOperand::LSR => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; shrx eax, Rd(data_reg), ecx
+                );
+            },
+            RegShiftOperand::ASR => {
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; sarx eax, Rd(data_reg), ecx
+                );
+            },
+            RegShiftOperand::ROR => {
+                if data_reg != EAX {
+                    dynasm!(self.assembler
+                        ; .arch x64
+                        ; mov eax, Rd(data_reg)
+                    );
+                }
+                dynasm!(self.assembler
+                    ; .arch x64
+                    ; pushf
+                    ; ror eax, cl
+                    ; popf
+                );
+            },
+        }
+        EAX
     }
+}
 
+// Instruction helpers
+impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     /// Do an ALU operation.
+    /// 
+    /// Logical ops should set `shift_carry` to true.
     #[inline]
-    fn alu_instr<F>(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool, op: F)
+    fn alu_instr<F>(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool, shift_carry: bool, op: F)
         where F: FnOnce(&mut Self, u8, DataOperand)
     {
         if !set_flags {
@@ -702,9 +879,22 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             EBX
         };
 
-        let op2 = self.alu_operand_2(op2);
+        let preserve_shift_carry = shift_carry && set_flags;
+        let op2 = self.alu_operand_2(op2, preserve_shift_carry);
 
+        if preserve_shift_carry {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; sbb edx, edx
+            );
+        }
         op(self, dest_reg, op2);
+        if preserve_shift_carry {
+            dynasm!(self.assembler
+                ; .arch x64
+                ; rcr edx, 1
+            );
+        }
 
         if dest_reg == EBX {
             self.writeback_dest(rd, EBX);
@@ -712,6 +902,43 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if !set_flags {
             self.pop_flags();
         }
+    }
+
+    /// Call a subroutine.
+    /// 
+    /// This will go to the central JIT cache. It might lead to the interpreter,
+    /// or another JITted subroutine.
+    fn call_subroutine(&mut self, dest: u32) {
+        let call_sub = wrap_call_subroutine::<M, T> as i64;
+        dynasm!(self.assembler
+            ; .arch x64
+            // Write back registers
+            ; mov rbx, [rbp-8]
+            ; mov [rbx], r8d
+            ; mov [rbx+4], r9d
+            ; mov [rbx+8], r10d
+            ; mov [rbx+12], r11d
+            ; mov [rbx+16], r12d
+            ; mov [rbx+20], r13d
+            ; mov [rbx+24], r14d
+            ; mov [rbx+52], r15d
+
+            ; push rdi
+            ; mov rax, QWORD call_sub
+            ; mov esi, DWORD dest as i32
+            ; call rax
+            ; pop rdi
+
+            // Reload registers
+            ; mov r8d, [rbx]
+            ; mov r9d, [rbx+4]
+            ; mov r10d, [rbx+8]
+            ; mov r11d, [rbx+12]
+            ; mov r12d, [rbx+16]
+            ; mov r13d, [rbx+20]
+            ; mov r14d, [rbx+24]
+            ; mov r15d, [rbx+52]
+        );
     }
 
     /// Do a load halfword, or load signed byte / halfword.
@@ -749,62 +976,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
         self.pop_flags();
     }
-
-    /// Generate code to add to cycle count.
-    fn add_const_cycles(&mut self, cycles: usize) {
-        dynasm!(self.assembler
-            ; .arch x64
-            ; add QWORD [rbp-16], cycles as i32
-        );
-    }
-
-    /// Generate code to add to cycle count from register.
-    fn add_dyn_cycles(&mut self, reg: u8) {
-        dynasm!(self.assembler
-            ; .arch x64
-            ; add QWORD [rbp-16], Rq(reg)
-        );
-    }
-
-    /// Generate code to reset cycle count after clocking.
-    fn reset_cycles(&mut self) {
-        dynasm!(self.assembler
-            ; .arch x64
-            ; mov QWORD [rbp-16], 0
-        );
-    }
-
-    /// Generate code for returning from subroutine.
-    fn ret(&mut self) {
-        println!("Gen return!");
-        dynasm!(self.assembler
-            ; .arch x64
-            // TODO: write back flags?
-
-            // Write back regs
-            ; mov rax, [rbp-8]
-
-            ; mov [rax], r8d
-            ; mov [rax+4], r9d
-            ; mov [rax+8], r10d
-            ; mov [rax+12], r11d
-            ; mov [rax+16], r12d
-            ; mov [rax+20], r13d
-            ; mov [rax+24], r14d
-            ; mov [rax+52], r15d
-
-            // Restore
-            ; pop r15
-            ; pop r14
-            ; pop r13
-            ; pop r12
-            ; pop rbx
-            ; mov rsp, rbp
-            ; pop rbp
-
-            ; ret
-        );
-    }
 }
 
 // Instructions
@@ -812,7 +983,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(EBX);
-        let op = self.alu_operand_2(op2);
+        let op = self.alu_operand_2(op2, set_flags);
         match op {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -827,7 +998,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if set_flags {
             dynasm!(self.assembler
                 ; .arch x64
+                ; sbb edx, edx  // Preserve carry flag
                 ; test Rd(dest_reg), DWORD -1
+                ; rcr edx, 1    // Restore carry flag
             );
         }
         // Unmapped dest: we need to write back.
@@ -839,7 +1012,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn mvn(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(EBX);
-        let op = self.alu_operand_2(op2);
+        let op = self.alu_operand_2(op2, set_flags);
         match op {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -856,7 +1029,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if set_flags {
             dynasm!(self.assembler
                 ; .arch x64
+                ; sbb edx, edx  // Preserve carry flag
                 ; test Rd(dest_reg), DWORD -1
+                ; rcr edx, 1    // Restore carry flag
             );
         }
         // Unmapped dest: we need to write back.
@@ -866,7 +1041,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn and(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, true, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -881,7 +1056,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn eor(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, true, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -896,7 +1071,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn orr(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, true, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -918,7 +1093,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         let dest_reg = dest.unwrap_or(EBX);
         let op1_reg = self.get_register(rn, EBX);
 
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, set_flags);
 
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
@@ -942,7 +1117,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn add(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, false, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -957,7 +1132,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn adc(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, false, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -972,7 +1147,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn sub(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, false, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -987,7 +1162,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     }
 
     fn sbc(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
-        self.alu_instr(rd, rn, op2, set_flags, |c, op1, op2| {
+        self.alu_instr(rd, rn, op2, set_flags, false, |c, op1, op2| {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
@@ -1005,7 +1180,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if !set_flags {
             self.push_flags();
         }
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, false);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -1041,7 +1216,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if !set_flags {
             self.push_flags();
         }
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, false);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -1075,7 +1250,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn tst(&mut self, rn: usize, op2: &ALUOperand) {
         let op1_reg = self.alu_operand_1(rn, EBX);
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, true);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -1096,7 +1271,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; mov ebx, Rd(op1_reg)
             );
         }
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, true);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -1111,7 +1286,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn cmp(&mut self, rn: usize, op2: &ALUOperand) {
         let op1_reg = self.alu_operand_1(rn, EBX);
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, false);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -1132,7 +1307,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; mov ebx, Rd(op1_reg)
             );
         }
-        let op2 = self.alu_operand_2(op2);
+        let op2 = self.alu_operand_2(op2, false);
         match op2 {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
@@ -1512,7 +1687,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.base_reg(transfer_params.base_reg, EBX);
 
         if transfer_params.pre_index {
-            let offset = self.shift_op(offset);
+            let offset = self.shift_op_with_carry(offset);
             self.addr_offset(EBX, transfer_params.inc, offset);
         }
 
@@ -1538,7 +1713,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.add_dyn_cycles(EDX);
         
         if !transfer_params.pre_index {
-            let offset = self.shift_op(offset);
+            let offset = self.shift_op_with_carry(offset);
             self.addr_offset(EBX, transfer_params.inc, offset);
             self.writeback_dest(transfer_params.base_reg, EBX);
         } else if transfer_params.writeback {
@@ -1584,7 +1759,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.base_reg(transfer_params.base_reg, EBX);
 
         if transfer_params.pre_index {
-            let offset = self.shift_op(offset);
+            let offset = self.shift_op_with_carry(offset);
             self.addr_offset(EBX, transfer_params.inc, offset);
         }
 
@@ -1609,7 +1784,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.add_dyn_cycles(EAX);
         
         if !transfer_params.pre_index {
-            let offset = self.shift_op(offset);
+            let offset = self.shift_op_with_carry(offset);
             self.addr_offset(EBX, transfer_params.inc, offset);
             self.writeback_dest(transfer_params.base_reg, EBX);
         } else if transfer_params.writeback {
