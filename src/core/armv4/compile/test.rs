@@ -343,8 +343,11 @@ fn test_shift_carry_with_logic() {
     let mut mem = TestMem {
         instructions: vec![
             0xE010_5200,    // ANDS R5, R0, (R0 LSL #4)
-            0x228B_B001,    // ADDCS R11, R11, #1
-            0x428C_C001,    // ADDMI R12, R12, #1
+            0x228A_A00A,    // ADDCS R10, R10, #10
+            0x428B_B00B,    // ADDMI R11, R11, #11
+            0xE036_6136,    // EORS R6, R6, (R6 LSR R1)
+            0x228C_C00C,    // ADDCS R12, R12, #12
+            0x428D_D00D,    // ADDMI R13, R13, #13
             0xE1A0_F00E,    // MOV R15, R14
             0x0,
             0x0
@@ -357,9 +360,49 @@ fn test_shift_carry_with_logic() {
         Ok(routine) => {
             run_test!(mem, routine,
                 [0, 0xFFFF_0000, 0xFFFF_0000u32],
+                [1, 3, 3],
                 [5, 0, 0xFFF0_0000u32],
-                [11, 0, 0x0000_0001],
-                [12, 0, 0x0000_0001]
+                // 1C1C_8787 ^ 0383_90F0
+                [6, 0x1C1C_8787, 0x1F9F_1777],
+                [10, 0, 10],
+                [11, 0, 11],
+                [12, 0, 12],
+                [13, 0, 0]
+            );
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_shift_carry_with_add() {
+    let mut mem = TestMem {
+        instructions: vec![
+            0xE091_0202,    // ADDS R0, R1, R2, LSL #4
+            0x228A_A00A,    // ADDCS R10, R10, #10
+            0x628B_B00B,    // ADDVS R11, R11, #11
+            0xE0B1_3222,    // ADCS R3, R1, R2, LSR #4
+            0x228C_C00C,    // ADDCS R12, R12, #12
+            0x428D_D00D,    // ADDMI R13, R13, #13
+            0xE1A0_F00E,    // MOV R15, R14
+            0x0,
+            0x0
+        ],
+        data: Vec::new()
+    };
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            run_test!(mem, routine,
+                [0, 0, 0x8ACF_1348u32],
+                [1, 0x1234_5678, 0x1234_5678],
+                [2, 0x1789_ABCD, 0x1789_ABCD],
+                [3, 0, 0x13AC_F134],
+                [10, 0, 0],
+                [11, 0, 11],
+                [12, 0, 0],
+                [13, 0, 0]
             );
         },
         Err(e) => panic!("unexpected err {:?}", e)
