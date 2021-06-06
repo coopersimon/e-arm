@@ -97,6 +97,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     fn write_reg(&mut self, n: usize, data: u32);
     /// Get a reference to all of the registers.
     fn mut_regs<'a>(&'a mut self) -> &'a mut [u32];
+
     /// Directly modify the PC.
     /// 
     /// Keep in mind the PC will be incremented after the execution completes,
@@ -106,6 +107,9 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// This is the entry point for JIT compiled code.
     fn call_subroutine(&mut self, dest: u32);
+
+    /// Clock and handle interrupts.
+    fn clock(&mut self, cycles: usize);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;

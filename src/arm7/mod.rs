@@ -127,12 +127,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             fetch_cycles + execute_cycles
         };
         self.fetch_type = MemCycleType::S;
-        match self.mem.clock(cycles) {
-            Some(ExternalException::RST) => self.reset(),
-            Some(ExternalException::FIQ) => self.fast_interrupt(),
-            Some(ExternalException::IRQ) => self.interrupt(),
-            None => {}
-        }
+        self.clock(cycles);
         cycles
     }
 
@@ -209,6 +204,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
     fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
         &mut self.regs
     }
+
     fn do_branch(&mut self, dest: u32) {
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
@@ -253,6 +249,15 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
                     }
                 }
             }
+        }
+    }
+
+    fn clock(&mut self, cycles: usize) {
+        match self.mem.clock(cycles) {
+            Some(ExternalException::RST) => self.reset(),
+            Some(ExternalException::FIQ) => self.fast_interrupt(),
+            Some(ExternalException::IRQ) => self.interrupt(),
+            None => {}
         }
     }
 

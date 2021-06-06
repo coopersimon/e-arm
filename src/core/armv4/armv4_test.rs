@@ -111,6 +111,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn call_subroutine(&mut self, _dest: u32) {
         // TODO
     }
+    fn clock(&mut self, _cycles: usize) {
+
+    }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
         self.regs[n]

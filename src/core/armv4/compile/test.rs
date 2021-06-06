@@ -800,25 +800,23 @@ fn test_multiply() {
         0xE005_0498,    // MUL R5, R4, R8
         0xE026_5293,    // MLA R6, R2, R3, +R5
         0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
     ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
-            {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
-                cpu.write_reg(0, 0x10);
-                cpu.write_reg(1, 0x1F);
-                cpu.write_reg(2, 0x33);
-                cpu.write_reg(3, 0xFFFF_FFFF);
-                cpu.write_reg(8, 0x22);
-    
-                routine.call(&mut cpu);
-    
-                assert_eq!(cpu.read_reg(4), 0x1F0);
-                assert_eq!(cpu.read_reg(5), 0x41E0);
-                assert_eq!(cpu.read_reg(6), 0x41AD);
-            }
+            run_test!(mem, routine,
+                [0, 0x10, 0x10],
+                [1, 0x1F, 0x1F],
+                [2, 0x33, 0x33],
+                [3, 0xFFFF_FFFFu32, 0xFFFF_FFFFu32],
+                [4, 0, 0x1F0],
+                [5, 0, 0x41E0],
+                [6, 0, 0x41AD],
+                [8, 0x22, 0x22]
+            );
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }
@@ -831,34 +829,25 @@ fn test_long_unsigned_multiply() {
         0xE08A_B293,    // UMULL R10, R11, R2, R3
         0xE0AA_B495,    // UMLAL R10, R11, R4, R5
         0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
     ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
-            {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
-                cpu.write_reg(0, 0x1234_5678);
-                cpu.write_reg(1, 0x2323_4545);
-                cpu.write_reg(2, 0x33);
-                cpu.write_reg(3, 0xFFFF_FFFF);
-                cpu.write_reg(4, 0x555);
-                cpu.write_reg(5, 0x666);
-    
-                routine.call(&mut cpu);
-    
-                assert_eq!(cpu.read_reg(0), 0x1234_5678);
-                assert_eq!(cpu.read_reg(1), 0x2323_4545);
-                assert_eq!(cpu.read_reg(2), 0x33);
-                assert_eq!(cpu.read_reg(3), 0xFFFF_FFFF);
-                assert_eq!(cpu.read_reg(4), 0x555);
-                assert_eq!(cpu.read_reg(5), 0x666);
-
-                assert_eq!(cpu.read_reg(6), 0x27F_A9E7);
-                assert_eq!(cpu.read_reg(7), 0x3DD1_A658);
-                assert_eq!(cpu.read_reg(10), 0x33);
-                assert_eq!(cpu.read_reg(11), 0x0022_1DAB);
-            }
+            run_test!(mem, routine,
+                [0, 0x1234_5678, 0x1234_5678],
+                [1, 0x2323_4545, 0x2323_4545],
+                [2, 0x33, 0x33],
+                [3, 0xFFFF_FFFFu32, 0xFFFF_FFFFu32],
+                [4, 0x555, 0x555],
+                [5, 0x666, 0x666],
+                [6, 0, 0x27F_A9E7],
+                [7, 0, 0x3DD1_A658],
+                [10, 0, 0x33],
+                [11, 0, 0x0022_1DAB]
+            );
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }
@@ -871,34 +860,25 @@ fn test_long_signed_multiply() {
         0xE0CA_B293,    // SMULL R10, R11, R2, R3
         0xE0EA_B495,    // SMLAL R10, R11, R4, R5
         0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
     ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
-            {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
-                cpu.write_reg(0, 0x1234_5678);
-                cpu.write_reg(1, 0x2323_4545);
-                cpu.write_reg(2, 0x33);
-                cpu.write_reg(3, 0xFFFF_FFFF);
-                cpu.write_reg(4, 0x555);
-                cpu.write_reg(5, 0x666);
-    
-                routine.call(&mut cpu);
-    
-                assert_eq!(cpu.read_reg(0), 0x1234_5678);
-                assert_eq!(cpu.read_reg(1), 0x2323_4545);
-                assert_eq!(cpu.read_reg(2), 0x33);
-                assert_eq!(cpu.read_reg(3), 0xFFFF_FFFF);
-                assert_eq!(cpu.read_reg(4), 0x555);
-                assert_eq!(cpu.read_reg(5), 0x666);
-                
-                assert_eq!(cpu.read_reg(6), 0x27F_A9E7);
-                assert_eq!(cpu.read_reg(7), 0x3DD1_A658);
-                assert_eq!(cpu.read_reg(10), 0);
-                assert_eq!(cpu.read_reg(11), 0x0022_1DAB);
-            }
+            run_test!(mem, routine,
+                [0, 0x1234_5678, 0x1234_5678],
+                [1, 0x2323_4545, 0x2323_4545],
+                [2, 0x33, 0x33],
+                [3, 0xFFFF_FFFFu32, 0xFFFF_FFFFu32],
+                [4, 0x555, 0x555],
+                [5, 0x666, 0x666],
+                [6, 0, 0x27F_A9E7],
+                [7, 0, 0x3DD1_A658],
+                [10, 0, 0],
+                [11, 0, 0x0022_1DAB]
+            );
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }
@@ -911,6 +891,8 @@ fn test_load_word_imm_offset() {
         0xE413_2004,    // LDR R2, [R3], -#4
         0xE5B5_4004,    // LDR R4, [R5, +#4]!
         0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
     ]).data(vec![
         0x82, 0x83, 0x84, 0x85,
         0x78, 0x56, 0x34, 0x12
@@ -919,21 +901,14 @@ fn test_load_word_imm_offset() {
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
-            {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
-                cpu.write_reg(1, 0x1000_0000);
-                cpu.write_reg(3, 0x1000_0000);
-                cpu.write_reg(5, 0x1000_0000);
-    
-                routine.call(&mut cpu);
-    
-                assert_eq!(cpu.read_reg(0), 0x1234_5678);
-                assert_eq!(cpu.read_reg(1), 0x1000_0000);
-                assert_eq!(cpu.read_reg(2), 0x8584_8382);
-                assert_eq!(cpu.read_reg(3), 0x0FFF_FFFC);
-                assert_eq!(cpu.read_reg(4), 0x1234_5678);
-                assert_eq!(cpu.read_reg(5), 0x1000_0004);
-            }
+            run_test!(mem, routine,
+                [0, 0, 0x1234_5678],
+                [1, 0x1000_0000, 0x1000_0000],
+                [2, 0, 0x8584_8382u32],
+                [3, 0x1000_0000, 0x0FFF_FFFC],
+                [4, 0, 0x1234_5678],
+                [5, 0x1000_0000, 0x1000_0004]
+            );
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }

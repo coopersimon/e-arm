@@ -2032,6 +2032,5 @@ pub unsafe extern "Rust" fn wrap_store_byte<M: Mem32<Addr = u32>, T: ARMCore<M>>
 }
 
 pub unsafe extern "Rust" fn wrap_clock<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, cycles: usize) {
-    // TODO: wrap this in a func...
-    cpu.as_mut().unwrap().ref_mem_mut().clock(cycles);
+    cpu.as_mut().unwrap().clock(cycles);
 }
