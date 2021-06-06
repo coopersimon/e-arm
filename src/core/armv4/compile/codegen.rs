@@ -169,8 +169,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
             ARMv4InstructionType::TADDPC{rd, op2} => self.taddpc(*rd, *op2),
 
-            ARMv4InstructionType::B{..} => unreachable!("this should have been generated earlier..."),
-            ARMv4InstructionType::TB{..} => unreachable!("this should have been generated earlier..."),
+            ARMv4InstructionType::B{..} => unreachable!("b: this should have been generated earlier..."),
+            ARMv4InstructionType::TB{..} => unreachable!("tb: this should have been generated earlier..."),
             ARMv4InstructionType::BX{reg} => self.bx(*reg),
             ARMv4InstructionType::BL{offset} => self.bl(*offset),
             ARMv4InstructionType::TBLLO{offset} => self.tbl_lo(*offset),
@@ -474,7 +474,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     /// Generate code for returning from subroutine.
     fn ret(&mut self) {
-        println!("Gen return!");
+        //println!("Gen return!");
         dynasm!(self.assembler
             ; .arch x64
             // TODO: write back flags?
@@ -1637,6 +1637,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn bl(&mut self, offset: u32) {
         //self.push_flags();
+        let ret_addr = self.current_pc.wrapping_sub(constants::I_SIZE);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov eax, DWORD ret_addr as i32
+        );
+        self.writeback_unmapped_dest(constants::LINK_REG, EAX);
+
         let dest = self.current_pc.wrapping_add(offset);
         self.call_subroutine(dest);
         //self.pop_flags();
@@ -1648,6 +1655,13 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn tbl_hi(&mut self, offset: u32) {
         //self.push_flags();
+        let ret_addr = self.current_pc.wrapping_sub(constants::T_SIZE);
+        dynasm!(self.assembler
+            ; .arch x64
+            ; mov eax, DWORD ret_addr as i32
+        );
+        self.writeback_unmapped_dest(constants::LINK_REG, EAX);
+
         let dest = self.tbl_offset.wrapping_add(offset);
         self.tbl_offset = 0;
         self.call_subroutine(dest);

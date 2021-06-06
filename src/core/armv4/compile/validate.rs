@@ -77,7 +77,7 @@ impl Validator {
                 let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
                 (decode_arm_v4(i), cycles)
             };
-            println!("Encountered i: {}", decoded);
+            //println!("Encountered i: {}", decoded);
 
             let i_cycles = cycles + self.internal_cycles(&decoded.instr);
             let mut instruction = DecodedInstruction {
@@ -111,7 +111,8 @@ impl Validator {
                 ARMv4InstructionType::MSR{..} => return Err(CompilerError::IllegalInstruction),
 
                 // Take a note of internal branch destinations:
-                ARMv4InstructionType::B{offset} => {
+                ARMv4InstructionType::B{offset} |
+                ARMv4InstructionType::TB{offset} => {
                     let final_offset = offset.wrapping_add(i_size * 2);
                     let dest = self.validate_branch(final_offset)?;
                     instruction.branch_to = Some(label_idx);
@@ -237,7 +238,10 @@ impl Validator {
         } else if dest >= self.end_addr {
             return Err(CompilerError::TooLong);
         }
-        self.branches.insert(dest);
+
+        if dest > self.current_addr {
+            self.branches.insert(dest);
+        }
 
         // Check that meta data is valid:
         if let Some(meta_data) = self.instr_meta.get(&dest) {
@@ -254,10 +258,16 @@ impl Validator {
         let offset = reg_list.count_ones() * 4;
         let final_stack_offset = if inc {self.current_meta.stack_offset + (offset as i32)} else {self.current_meta.stack_offset - (offset as i32)};
         let mut current_stack_offset = if inc {self.current_meta.stack_offset} else {final_stack_offset};
+        let pre = pre_index == inc;
         for reg in (0..16).filter(|reg| crate::common::u32::test_bit(reg_list, *reg)) {
-            current_stack_offset += 4;
+            if pre {
+                current_stack_offset += 4;
+            }
             if self.current_meta.ret.is_in_reg(reg) {
-                self.current_meta.ret = ReturnLocation::Stack(if pre_index {current_stack_offset - 4} else {current_stack_offset});
+                self.current_meta.ret = ReturnLocation::Stack(current_stack_offset);
+            }
+            if !pre {
+                current_stack_offset += 4;
             }
         }
         if writeback {
@@ -289,9 +299,12 @@ impl Validator {
         let final_stack_offset = if inc {self.current_meta.stack_offset + (offset as i32)} else {self.current_meta.stack_offset - (offset as i32)};
         let mut current_stack_offset = if inc {self.current_meta.stack_offset} else {final_stack_offset};
         let mut write_ret_to_pc = false;
+        let pre = pre_index == inc;
         for reg in (0..16).filter(|reg| crate::common::u32::test_bit(reg_list, *reg)) {
-            current_stack_offset += 4;
-            if self.current_meta.ret.is_in_stack(if pre_index {current_stack_offset - 4} else {current_stack_offset}) {
+            if pre {
+                current_stack_offset += 4;
+            }
+            if self.current_meta.ret.is_in_stack(current_stack_offset) {
                 self.current_meta.ret = ReturnLocation::Reg(reg);
                 if reg == constants::PC_REG {
                     write_ret_to_pc = true;
@@ -299,6 +312,9 @@ impl Validator {
             } else if reg == constants::PC_REG {
                 // Not allowed to write arbitrary data to PC.
                 return Err(CompilerError::DynamicPCManipulation);
+            }
+            if !pre {
+                current_stack_offset += 4;
             }
         }
         if writeback {

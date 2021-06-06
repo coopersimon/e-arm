@@ -176,6 +176,9 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     }
 
     fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
+        if from < 0x0800_0000 {
+            return Subroutine::CannotCompile;
+        }
         let mut compiler = ARMv4Compiler::new();
         let result = if self.cpsr.contains(CPSR::T) {
             compiler.compile_thumb::<M, Self>(from, &mut self.mem)
@@ -238,6 +241,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             Some(s) => {
                 s.call(self);
                 self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
+                self.regs[PC_REG] = self.regs[PC_REG] & 0xFFFF_FFFE;
             },
             None => {
                 let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
