@@ -17,6 +17,8 @@ use super::{
 
 /// Maximum length of subroutine in instructions.
 const SUBROUTINE_MAX_LEN: u32 = 256;
+/// Maximum amount of cycles between clock calls.
+const MAX_CYCLES: usize = 100;
 
 #[derive(PartialEq, Eq, Clone)]
 struct DecodeInfo {
@@ -33,6 +35,8 @@ pub struct Validator {
     end_addr:       u32,
     /// The decode info at the address the validator is validating.
     current_meta:   DecodeInfo,
+    /// Number of cycles since the last clock.
+    cycles_since_clock: usize,
     /// A list of unresolved branches.
     branches:       BTreeSet<u32>,
     /// Decode info at each address encountered so far.
@@ -49,6 +53,7 @@ impl Validator {
                 ret: ReturnLocation::Reg(constants::LINK_REG),
                 stack_offset: 0,
             },
+            cycles_since_clock: 0,
             branches: BTreeSet::new(),
             instr_meta: BTreeMap::new(),
         }
@@ -74,14 +79,20 @@ impl Validator {
             };
             println!("Encountered i: {}", decoded);
 
+            let i_cycles = cycles + self.internal_cycles(&decoded.instr);
             let mut instruction = DecodedInstruction {
                 instruction:    decoded.clone(),
-                cycles:         cycles + self.internal_cycles(&decoded.instr),
+                cycles:         i_cycles,
                 label:          None,
                 branch_to:      None,
                 ret:            false,
                 clock:          false,
             };
+            self.cycles_since_clock += i_cycles;
+            if self.cycles_since_clock >= MAX_CYCLES {
+                self.cycles_since_clock = 0;
+                instruction.clock = true;
+            }
             // Take certain actions depending on the instruction...
             match &decoded.instr {
                 // Check the instruction is allowed:
@@ -106,12 +117,17 @@ impl Validator {
                     instruction.branch_to = Some(label_idx);
                     labels.insert(dest, label_idx);
                     label_idx += 1;
+
+                    self.cycles_since_clock = 0;
+                    instruction.clock = true;
                 },
 
                 // Track the stack & return address:
                 ARMv4InstructionType::MOV{rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), ..} if self.current_meta.ret.is_in_reg(*rs) => {
                     // Check if we are returning now:
                     if *rd == constants::PC_REG {
+                        self.cycles_since_clock = 0;
+                        instruction.clock = true;
                         instruction.ret = true;
                         if self.branches.is_empty() {
                             instructions.push(instruction);
@@ -130,6 +146,8 @@ impl Validator {
                 ARMv4InstructionType::LDM{transfer_params: TransferParams{base_reg: constants::SP_REG, inc, pre_index, writeback}, reg_list, ..} => {
                     let ret_in_pc = self.validate_ldm(*inc, *pre_index, *writeback, *reg_list)?;
                     if ret_in_pc {
+                        self.cycles_since_clock = 0;
+                        instruction.clock = true;
                         instruction.ret = true;
                         if self.branches.is_empty() {
                             instructions.push(instruction);
@@ -140,6 +158,8 @@ impl Validator {
                 ARMv4InstructionType::LDR{transfer_params: TransferParams{base_reg: constants::SP_REG, inc, pre_index, writeback}, data_reg, offset} => {
                     let ret_in_pc = self.validate_ldr(*inc, *pre_index, *writeback, *data_reg, offset.clone())?;
                     if ret_in_pc {
+                        self.cycles_since_clock = 0;
+                        instruction.clock = true;
                         instruction.ret = true;
                         if self.branches.is_empty() {
                             instructions.push(instruction);
@@ -150,6 +170,8 @@ impl Validator {
 
                 // Check if we are returning now:
                 ARMv4InstructionType::BX{reg} => if self.current_meta.ret.is_in_reg(*reg) {
+                    self.cycles_since_clock = 0;
+                    instruction.clock = true;
                     instruction.ret = true;
                     // We only return if we have covered all the possible branches, and the return value is written to PC.
                     if self.branches.is_empty() {

@@ -19,6 +19,7 @@ macro_rules! run_test {
                 let got = cpu.read_reg($reg);
                 assert_eq!(got, $end, "(sim) R{}: expected 0x{:X}, got 0x{:X}", $reg, $end, got);
             )*
+            println!("sim cycles: {}", cpu.ref_mem().cycles);
         }
         {   // Test JIT
             let mut cpu = ARM7TDMI::new($mem.clone(), HashMap::new(), None);
@@ -30,14 +31,50 @@ macro_rules! run_test {
                 let got = cpu.read_reg($reg);
                 assert_eq!(got, $end, "(jit) R{}: expected 0x{:X}, got 0x{:X}", $reg, $end, got);
             )*
+            println!("jit cycles: {}", cpu.ref_mem().cycles);
         }
     };
+}
+
+struct TestMemBuilder {
+    instructions: Vec<u32>,
+    data: Vec<u8>,
+}
+
+impl TestMemBuilder {
+    fn instructions(mut self, i: Vec<u32>) -> Self {
+        self.instructions = i;
+        self
+    }
+
+    fn data(mut self, d: Vec<u8>) -> Self {
+        self.data = d;
+        self
+    }
+
+    fn build(self) -> TestMem {
+        TestMem {
+            instructions: self.instructions,
+            data: self.data,
+            cycles: 0
+        }
+    }
 }
 
 #[derive(Clone)]
 struct TestMem {
     instructions: Vec<u32>,
-    data: Vec<u8>
+    data: Vec<u8>,
+    cycles: usize
+}
+
+impl TestMem {
+    fn new() -> TestMemBuilder {
+        TestMemBuilder {
+            instructions: Vec::new(),
+            data: Vec::new(),
+        }
+    }
 }
 
 impl Mem32 for TestMem {
@@ -104,23 +141,21 @@ impl Mem32 for TestMem {
         }
     }
 
-    fn clock(&mut self, _cycles: usize) -> Option<ExternalException> {
+    fn clock(&mut self, cycles: usize) -> Option<ExternalException> {
+        self.cycles += cycles;
         None
     }
 }
 
 #[test]
 fn test_add_imm() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE3A0_007B,    // MOV R0, #123
-            0xE280_10EA,    // ADD R1, R0, #234
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE3A0_007B,    // MOV R0, #123
+        0xE280_10EA,    // ADD R1, R0, #234
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -132,16 +167,13 @@ fn test_add_imm() {
 }
 
 #[test]
-fn test_add_reg() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE280_10EA,    // ADD R1, R0, #234
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+fn test_add_reg_with_imm() {
+    let mut mem = TestMem::new().instructions(vec![
+        0xE280_10EA,    // ADD R1, R0, #234
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -153,17 +185,14 @@ fn test_add_reg() {
 }
 
 #[test]
-fn test_add_reg_2() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE080_1001,    // ADD R1, R0, R1
-            0xE082_2003,    // ADD R2, R2, R3
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+fn test_add_reg_with_reg() {
+    let mut mem = TestMem::new().instructions(vec![
+        0xE080_1001,    // ADD R1, R0, R1
+        0xE082_2003,    // ADD R2, R2, R3
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -181,21 +210,18 @@ fn test_add_reg_2() {
 
 #[test]
 fn test_multi_add() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE080_8001,    // ADD R8, R0, R1
-            0xE082_9003,    // ADD R9, R2, R3
-            0xE084_A005,    // ADD R10, R4, R5
-            0xE086_B007,    // ADD R11, R6, R7
-            0xE088_C009,    // ADD R12, R8, R9
-            0xE08C_C00A,    // ADD R12, R12, R10
-            0xE08C_C00B,    // ADD R12, R12, R11
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE080_8001,    // ADD R8, R0, R1
+        0xE082_9003,    // ADD R9, R2, R3
+        0xE084_A005,    // ADD R10, R4, R5
+        0xE086_B007,    // ADD R11, R6, R7
+        0xE088_C009,    // ADD R12, R8, R9
+        0xE08C_C00A,    // ADD R12, R12, R10
+        0xE08C_C00B,    // ADD R12, R12, R11
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -222,16 +248,13 @@ fn test_multi_add() {
 
 #[test]
 fn test_add_shift() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE080_B501,    // ADD R11, R0, (R1 LSL #10)
-            0xE08B_2332,    // ADD R2, R11, (R2 LSR R3)
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE080_B501,    // ADD R11, R0, (R1 LSL #10)
+        0xE08B_2332,    // ADD R2, R11, (R2 LSR R3)
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -251,26 +274,23 @@ fn test_add_shift() {
 
 #[test]
 fn test_imm_shifts() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1B0_5240,    // MOVS R5, (R0 ASR #4)
-            0x228B_B001,    // ADDCS R11, R11, #1
-            0xE1B0_6220,    // MOVS R6, (R0 LSR #4)
-            0x228B_B002,    // ADDCS R11, R11, #2
-            0xE1B0_7200,    // MOVS R7, (R0 LSL #4)
-            0x228B_B004,    // ADDCS R11, R11, #4
-            0xE1B0_8461,    // MOVS R8, (R1 ROR #8)
-            0x228B_B008,    // ADDCS R11, R11, #8
-            0xE1B0_9042,    // MOVS R9, (R2 ASR #32)
-            0x228B_B010,    // ADDCS R11, R11, #16
-            0xE1B0_A022,    // MOVS R10, (R2 LSR #32)
-            0x228B_B020,    // ADDCS R11, R11, #32
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1B0_5240,    // MOVS R5, (R0 ASR #4)
+        0x228B_B001,    // ADDCS R11, R11, #1
+        0xE1B0_6220,    // MOVS R6, (R0 LSR #4)
+        0x228B_B002,    // ADDCS R11, R11, #2
+        0xE1B0_7200,    // MOVS R7, (R0 LSL #4)
+        0x228B_B004,    // ADDCS R11, R11, #4
+        0xE1B0_8461,    // MOVS R8, (R1 ROR #8)
+        0x228B_B008,    // ADDCS R11, R11, #8
+        0xE1B0_9042,    // MOVS R9, (R2 ASR #32)
+        0x228B_B010,    // ADDCS R11, R11, #16
+        0xE1B0_A022,    // MOVS R10, (R2 LSR #32)
+        0x228B_B020,    // ADDCS R11, R11, #32
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -294,28 +314,25 @@ fn test_imm_shifts() {
 
 #[test]
 fn test_reg_shifts() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1A0_5450,    // MOV R5, (R0 ASR R4)
-            0x228B_B001,    // ADDCS R11, R11, #1
-            0xE1A0_6430,    // MOV R6, (R0 LSR R4)
-            0x228B_B002,    // ADDCS R11, R11, #2
-            0xE1A0_7410,    // MOV R7, (R0 LSL R4)
-            0x228B_B004,    // ADDCS R11, R11, #4
-            0xE3A0_4008,    // MOV R4, #8
-            0xE1A0_8471,    // MOV R8, (R1 ROR R4)
-            0x228B_B008,    // ADDCS R11, R11, #8
-            //0xE3A0_4020,    // MOV R4, #32
-            //0xE1A0_9452,    // MOV R9, (R2 ASR R4)
-            //0x228B_B010,    // ADDCS R11, R11, #16
-            //0xE1A0_A432,    // MOV R10, (R2 LSR R4)
-            //0x228B_B020,    // ADDCS R11, R11, #32
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1A0_5450,    // MOV R5, (R0 ASR R4)
+        0x228B_B001,    // ADDCS R11, R11, #1
+        0xE1A0_6430,    // MOV R6, (R0 LSR R4)
+        0x228B_B002,    // ADDCS R11, R11, #2
+        0xE1A0_7410,    // MOV R7, (R0 LSL R4)
+        0x228B_B004,    // ADDCS R11, R11, #4
+        0xE3A0_4008,    // MOV R4, #8
+        0xE1A0_8471,    // MOV R8, (R1 ROR R4)
+        0x228B_B008,    // ADDCS R11, R11, #8
+        //0xE3A0_4020,    // MOV R4, #32
+        //0xE1A0_9452,    // MOV R9, (R2 ASR R4)
+        //0x228B_B010,    // ADDCS R11, R11, #16
+        //0xE1A0_A432,    // MOV R10, (R2 LSR R4)
+        //0x228B_B020,    // ADDCS R11, R11, #32
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -340,20 +357,17 @@ fn test_reg_shifts() {
 
 #[test]
 fn test_shift_carry_with_logic() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE010_5200,    // ANDS R5, R0, (R0 LSL #4)
-            0x228A_A00A,    // ADDCS R10, R10, #10
-            0x428B_B00B,    // ADDMI R11, R11, #11
-            0xE036_6136,    // EORS R6, R6, (R6 LSR R1)
-            0x228C_C00C,    // ADDCS R12, R12, #12
-            0x428D_D00D,    // ADDMI R13, R13, #13
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE010_5200,    // ANDS R5, R0, (R0 LSL #4)
+        0x228A_A00A,    // ADDCS R10, R10, #10
+        0x428B_B00B,    // ADDMI R11, R11, #11
+        0xE036_6136,    // EORS R6, R6, (R6 LSR R1)
+        0x228C_C00C,    // ADDCS R12, R12, #12
+        0x428D_D00D,    // ADDMI R13, R13, #13
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -376,20 +390,17 @@ fn test_shift_carry_with_logic() {
 
 #[test]
 fn test_shift_carry_with_add() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE091_0202,    // ADDS R0, R1, R2, LSL #4
-            0x228A_A00A,    // ADDCS R10, R10, #10
-            0x628B_B00B,    // ADDVS R11, R11, #11
-            0xE0B1_3222,    // ADCS R3, R1, R2, LSR #4
-            0x228C_C00C,    // ADDCS R12, R12, #12
-            0x428D_D00D,    // ADDMI R13, R13, #13
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE091_0202,    // ADDS R0, R1, R2, LSL #4
+        0x228A_A00A,    // ADDCS R10, R10, #10
+        0x628B_B00B,    // ADDVS R11, R11, #11
+        0xE0B1_3222,    // ADCS R3, R1, R2, LSR #4
+        0x228C_C00C,    // ADDCS R12, R12, #12
+        0x428D_D00D,    // ADDMI R13, R13, #13
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -411,16 +422,13 @@ fn test_shift_carry_with_add() {
 
 #[test]
 fn test_sub_rsb() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE040_9001,    // SUB R9, R0, R1
-            0xE269_2FFA,    // RSB R2, R9, #1000
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE040_9001,    // SUB R9, R0, R1
+        0xE269_2FFA,    // RSB R2, R9, #1000
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -438,18 +446,15 @@ fn test_sub_rsb() {
 
 #[test]
 fn test_logic() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE000_2001,    // AND R2, R0, R1
-            0xE020_3001,    // EOR R3, R0, R1
-            0xE180_4001,    // ORR R4, R0, R1
-            //0xE269_2FFA,    // AND R5, R2, R3
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE000_2001,    // AND R2, R0, R1
+        0xE020_3001,    // EOR R3, R0, R1
+        0xE180_4001,    // ORR R4, R0, R1
+        //0xE269_2FFA,    // AND R5, R2, R3
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -468,17 +473,14 @@ fn test_logic() {
 
 #[test]
 fn test_cond_eq() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE3B0_0000,    // MOVS R0, #0
-            0x03B0_1001,    // MOVSEQ R1, #1
-            0x03A0_2002,    // MOVEQ R2, #2
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE3B0_0000,    // MOVS R0, #0
+        0x03B0_1001,    // MOVSEQ R1, #1
+        0x03A0_2002,    // MOVEQ R2, #2
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -496,17 +498,14 @@ fn test_cond_eq() {
 
 #[test]
 fn test_cond_carry() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE090_2001,    // ADDS R2, R0, R1
-            0x23A0_A00A,    // MOVCS R10, #10
-            0x33A0_B00B,    // MOVCC R11, #11
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE090_2001,    // ADDS R2, R0, R1
+        0x23A0_A00A,    // MOVCS R10, #10
+        0x33A0_B00B,    // MOVCC R11, #11
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -526,16 +525,13 @@ fn test_cond_carry() {
 
 #[test]
 fn test_long_add() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE090_8004,    // ADDS R8, R0, R4
-            0xE0A1_9005,    // ADC R9, R1, R5
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE090_8004,    // ADDS R8, R0, R4
+        0xE0A1_9005,    // ADC R9, R1, R5
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -555,20 +551,17 @@ fn test_long_add() {
 
 #[test]
 fn test_long_sub() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE050_8004,    // SUBS R8, R0, R4
-            0x23A0_A001,    // MOVCS R10, #1
-            0x33A0_B001,    // MOVCC R11, #1
-            0xE0D1_9005,    // SBCS R9, R1, R5
-            0x23A0_C001,    // MOVCS R12, #1
-            0x33A0_D001,    // MOVCC R13, #1
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE050_8004,    // SUBS R8, R0, R4
+        0x23A0_A001,    // MOVCS R10, #1
+        0x33A0_B001,    // MOVCC R11, #1
+        0xE0D1_9005,    // SBCS R9, R1, R5
+        0x23A0_C001,    // MOVCS R12, #1
+        0x33A0_D001,    // MOVCC R13, #1
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -592,16 +585,13 @@ fn test_long_sub() {
 
 #[test]
 fn test_bic() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE3C0_30F0,    // BIC R3, R0, #F0
-            0xE1C3_9008,    // BIC R9, R3, R8
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE3C0_30F0,    // BIC R3, R0, #F0
+        0xE1C3_9008,    // BIC R9, R3, R8
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -619,16 +609,13 @@ fn test_bic() {
 
 #[test]
 fn test_mvn() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1E0_5000,    // MVN R5, R0
-            0xE3E0_6CF1,    // MVN R6, #F100
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1E0_5000,    // MVN R5, R0
+        0xE3E0_6CF1,    // MVN R6, #F100
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -645,17 +632,14 @@ fn test_mvn() {
 
 #[test]
 fn test_tst() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE110_0001,    // TST R0, R1
-            0x43A0_A00A,    // MOVMI R10, #10
-            0x53A0_B00B,    // MOVPL R11, #11
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE110_0001,    // TST R0, R1
+        0x43A0_A00A,    // MOVMI R10, #10
+        0x53A0_B00B,    // MOVPL R11, #11
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -674,17 +658,14 @@ fn test_tst() {
 
 #[test]
 fn test_teq() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE130_0001,    // TEQ R0, R1
-            0x43A0_A00A,    // MOVMI R10, #10
-            0x53A0_B00B,    // MOVPL R11, #11
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE130_0001,    // TEQ R0, R1
+        0x43A0_A00A,    // MOVMI R10, #10
+        0x53A0_B00B,    // MOVPL R11, #11
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -703,18 +684,15 @@ fn test_teq() {
 
 #[test]
 fn test_cmp() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE150_0001,    // CMP R0, R1
-            0xD3A0_A00A,    // MOVLE R10, #10
-            0xC3A0_B00B,    // MOVGT R11, #11
-            0x23A0_C00C,    // MOVCS R12, #12
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE150_0001,    // CMP R0, R1
+        0xD3A0_A00A,    // MOVLE R10, #10
+        0xC3A0_B00B,    // MOVGT R11, #11
+        0x23A0_C00C,    // MOVCS R12, #12
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -747,17 +725,14 @@ fn test_cmp() {
 
 #[test]
 fn test_cmn() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE170_0001,    // CMN R0, R1
-            0x23A0_A00A,    // MOVCS R10, #10
-            0xA3A0_B00B,    // MOVGE R11, #11
-            0xE1A0_F00E,    // MOV R15, R14
-            0x0,
-            0x0
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE170_0001,    // CMN R0, R1
+        0x23A0_A00A,    // MOVCS R10, #10
+        0xA3A0_B00B,    // MOVGE R11, #11
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -787,41 +762,32 @@ fn test_cmn() {
 
 #[test]
 fn test_internal_branch() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1B0_1000,    // MOVS R1, R0
-            0x4A00_0001,    // BMI #4
-            0xE3A0_2002,    // MOV R2, #2
-            0xE1A0_F00E,    // MOV R15, R14
-            0xE3A0_3003,    // MOV R3, #3
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1B0_1000,    // MOVS R1, R0
+        0x4A00_0001,    // BMI #4
+        0xE3A0_2002,    // MOV R2, #2
+        0xE1A0_F00E,    // MOV R15, R14
+        0xE3A0_3003,    // MOV R3, #3
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
         Ok(routine) => {
-            {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
-                cpu.write_reg(0, 0xFFFF_FFFF);
-    
-                routine.call(&mut cpu);
-    
-                assert_eq!(cpu.read_reg(1), 0xFFFF_FFFF);
-                assert_eq!(cpu.read_reg(2), 0);
-                assert_eq!(cpu.read_reg(3), 3);
-            }
-            {
-                let mut cpu = ARM7TDMI::new(mem, HashMap::new(), None);
-                cpu.write_reg(0, 0x1);
-    
-                routine.call(&mut cpu);
-    
-                assert_eq!(cpu.read_reg(1), 0x1);
-                assert_eq!(cpu.read_reg(2), 2);
-                assert_eq!(cpu.read_reg(3), 0);
-            }
+            run_test!(mem, routine,
+                [0, 0xFFFF_FFFF, 0xFFFF_FFFFu32],
+                [1, 0, 0xFFFF_FFFFu32],
+                [2, 0, 0],
+                [3, 0, 3]
+            );
+            run_test!(mem, routine,
+                [0, 1, 1],
+                [1, 0, 1],
+                [2, 0, 2],
+                [3, 0, 0]
+            );
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }
@@ -829,15 +795,12 @@ fn test_internal_branch() {
 
 #[test]
 fn test_multiply() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE004_0091,    // MUL R4, R0, R1
-            0xE005_0498,    // MUL R5, R4, R8
-            0xE026_5293,    // MLA R6, R2, R3, +R5
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE004_0091,    // MUL R4, R0, R1
+        0xE005_0498,    // MUL R5, R4, R8
+        0xE026_5293,    // MLA R6, R2, R3, +R5
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -863,15 +826,12 @@ fn test_multiply() {
 
 #[test]
 fn test_long_unsigned_multiply() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE086_7091,    // UMULL R6, R7, R0, R1
-            0xE08A_B293,    // UMULL R10, R11, R2, R3
-            0xE0AA_B495,    // UMLAL R10, R11, R4, R5
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE086_7091,    // UMULL R6, R7, R0, R1
+        0xE08A_B293,    // UMULL R10, R11, R2, R3
+        0xE0AA_B495,    // UMLAL R10, R11, R4, R5
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -906,15 +866,12 @@ fn test_long_unsigned_multiply() {
 
 #[test]
 fn test_long_signed_multiply() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE0C6_7091,    // SMULL R6, R7, R0, R1
-            0xE0CA_B293,    // SMULL R10, R11, R2, R3
-            0xE0EA_B495,    // SMLAL R10, R11, R4, R5
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE0C6_7091,    // SMULL R6, R7, R0, R1
+        0xE0CA_B293,    // SMULL R10, R11, R2, R3
+        0xE0EA_B495,    // SMLAL R10, R11, R4, R5
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -949,18 +906,15 @@ fn test_long_signed_multiply() {
 
 #[test]
 fn test_load_word_imm_offset() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE591_0004,    // LDR R0, [R1, +#4]
-            0xE413_2004,    // LDR R2, [R3], -#4
-            0xE5B5_4004,    // LDR R4, [R5, +#4]!
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE591_0004,    // LDR R0, [R1, +#4]
+        0xE413_2004,    // LDR R2, [R3], -#4
+        0xE5B5_4004,    // LDR R4, [R5, +#4]!
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -987,18 +941,15 @@ fn test_load_word_imm_offset() {
 
 #[test]
 fn test_load_word_reg_offset() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE791_000A,    // LDR R0, [R1, +R10]
-            0xE613_200A,    // LDR R2, [R3], -R10
-            0xE7B5_410B,    // LDR R4, [R5, +R11 LSL 2]!
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE791_000A,    // LDR R0, [R1, +R10]
+        0xE613_200A,    // LDR R2, [R3], -R10
+        0xE7B5_410B,    // LDR R4, [R5, +R11 LSL 2]!
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1029,19 +980,16 @@ fn test_load_word_reg_offset() {
 
 #[test]
 fn test_store_word_imm_offset() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE581_0004,    // STR R0, [R1, +#4]
-            0xE403_2004,    // STR R2, [R3], -#4
-            0xE5A5_4004,    // STR R4, [R5, +#4]!
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE581_0004,    // STR R0, [R1, +#4]
+        0xE403_2004,    // STR R2, [R3], -#4
+        0xE5A5_4004,    // STR R4, [R5, +#4]!
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1086,19 +1034,16 @@ fn test_store_word_imm_offset() {
 
 #[test]
 fn test_load_byte() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE5D1_0002,    // LDRB R0, [R1, +#2]
-            0xE453_2004,    // LDRB R2, [R3], -#4
-            0xE5F5_4005,    // LDRB R4, [R5, +#5]!
-            // TODO: reg offset
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE5D1_0002,    // LDRB R0, [R1, +#2]
+        0xE453_2004,    // LDRB R2, [R3], -#4
+        0xE5F5_4005,    // LDRB R4, [R5, +#5]!
+        // TODO: reg offset
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1125,19 +1070,16 @@ fn test_load_byte() {
 
 #[test]
 fn test_store_byte() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE5C1_0002,    // STRB R0, [R1, +#2]
-            0xE443_2004,    // STRB R2, [R3], -#4
-            0xE5E5_4005,    // STRB R4, [R5, +#5]!
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE5C1_0002,    // STRB R0, [R1, +#2]
+        0xE443_2004,    // STRB R2, [R3], -#4
+        0xE5E5_4005,    // STRB R4, [R5, +#5]!
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1182,19 +1124,16 @@ fn test_store_byte() {
 
 #[test]
 fn test_load_halfword() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1D1_00B2,    // LDRH R0, [R1, +#2]
-            0xE053_20B4,    // LDRH R2, [R3], -#4
-            0xE1F5_40B6,    // LDRH R4, [R5, +#6]!
-            // TODO: reg offset
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1D1_00B2,    // LDRH R0, [R1, +#2]
+        0xE053_20B4,    // LDRH R2, [R3], -#4
+        0xE1F5_40B6,    // LDRH R4, [R5, +#6]!
+        // TODO: reg offset
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1221,19 +1160,16 @@ fn test_load_halfword() {
 
 #[test]
 fn test_load_signed_halfword() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1D1_00F2,    // LDRSH R0, [R1, +#2]
-            0xE053_20F4,    // LDRSH R2, [R3], -#4
-            0xE1F5_40F6,    // LDRSH R4, [R5, +#6]!
-            // TODO: reg offset
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1D1_00F2,    // LDRSH R0, [R1, +#2]
+        0xE053_20F4,    // LDRSH R2, [R3], -#4
+        0xE1F5_40F6,    // LDRSH R4, [R5, +#6]!
+        // TODO: reg offset
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1260,19 +1196,16 @@ fn test_load_signed_halfword() {
 
 #[test]
 fn test_load_signed_byte() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1D1_00D2,    // LDRSB R0, [R1, +#2]
-            0xE053_20D4,    // LDRSB R2, [R3], -#4
-            0xE1F5_40D5,    // LDRSB R4, [R5, +#5]!
-            // TODO: reg offset
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1D1_00D2,    // LDRSB R0, [R1, +#2]
+        0xE053_20D4,    // LDRSB R2, [R3], -#4
+        0xE1F5_40D5,    // LDRSB R4, [R5, +#5]!
+        // TODO: reg offset
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1299,19 +1232,16 @@ fn test_load_signed_byte() {
 
 #[test]
 fn test_store_halfword() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE1C1_00B2,    // STRB R0, [R1, +#2]
-            0xE043_20B4,    // STRB R2, [R3], -#4
-            0xE1E5_40B6,    // STRB R4, [R5, +#6]!
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE1C1_00B2,    // STRB R0, [R1, +#2]
+        0xE043_20B4,    // STRB R2, [R3], -#4
+        0xE1E5_40B6,    // STRB R4, [R5, +#6]!
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1356,17 +1286,14 @@ fn test_store_halfword() {
 
 #[test]
 fn test_swp_word() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE101_8090,    // SWP R8, R0, [R1]
-            0xE103_2092,    // SWP R2, R2, [R3]
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x66, 0x77, 0x88, 0x99
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE101_8090,    // SWP R8, R0, [R1]
+        0xE103_2092,    // SWP R2, R2, [R3]
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x66, 0x77, 0x88, 0x99
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1404,17 +1331,14 @@ fn test_swp_word() {
 
 #[test]
 fn test_swp_byte() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE141_8090,    // SWPB R8, R0, [R1]
-            0xE143_2092,    // SWPB R2, R2, [R3]
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x66, 0x77, 0x88, 0x99
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE141_8090,    // SWPB R8, R0, [R1]
+        0xE143_2092,    // SWPB R2, R2, [R3]
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x66, 0x77, 0x88, 0x99
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1452,21 +1376,18 @@ fn test_swp_byte() {
 
 #[test]
 fn test_load_multiple() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE8BD_01F8,    // LDMIA R13!, {R3-8}
-            0xE91D_0402,    // LDMDB R13, {R1,R10}
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0x82, 0x83, 0x84, 0x85,
-            0x78, 0x56, 0x34, 0x12,
-            0x11, 0x22, 0x33, 0x44,
-            0x55, 0x66, 0x77, 0x88,
-            0x98, 0x76, 0x54, 0x32,
-            0x01, 0x02, 0x03, 0x04,
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE8BD_01F8,    // LDMIA R13!, {R3-8}
+        0xE91D_0402,    // LDMDB R13, {R1,R10}
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0x82, 0x83, 0x84, 0x85,
+        0x78, 0x56, 0x34, 0x12,
+        0x11, 0x22, 0x33, 0x44,
+        0x55, 0x66, 0x77, 0x88,
+        0x98, 0x76, 0x54, 0x32,
+        0x01, 0x02, 0x03, 0x04,
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1494,23 +1415,20 @@ fn test_load_multiple() {
 
 #[test]
 fn test_store_multiple() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE8AD_01F8,    // STMIA R13!, {R3-8}
-            0xE90C_0402,    // STMDB R12, {R1,R10}
-            0xE1A0_F00E,    // MOV R15, R14
-        ],
-        data: vec![
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-        ]
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE8AD_01F8,    // STMIA R13!, {R3-8}
+        0xE90C_0402,    // STMDB R12, {R1,R10}
+        0xE1A0_F00E,    // MOV R15, R14
+    ]).data(vec![
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {
@@ -1588,15 +1506,12 @@ fn test_store_multiple() {
 
 #[test]
 fn test_load_pc_relative() {
-    let mut mem = TestMem {
-        instructions: vec![
-            0xE59F_0000,    // LDR R0, [R15]
-            0xE1A0_F00E,    // MOV R15, R14
-            0xABCD_EF01,    // some data
-            0x0000_0000,    // garbage
-        ],
-        data: Vec::new()
-    };
+    let mut mem = TestMem::new().instructions(vec![
+        0xE59F_0000,    // LDR R0, [R15]
+        0xE1A0_F00E,    // MOV R15, R14
+        0xABCD_EF01,    // some data
+        0x0000_0000,    // garbage
+    ]).build();
     let mut compiler = super::ARMv4Compiler::new();
     let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
     match routine {

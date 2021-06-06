@@ -112,12 +112,17 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             let clock = wrap_clock::<M, T> as i64;
             dynasm!(self.assembler
                 ; .arch x64
-                ; mov rdi, [rbp-16]
+                ; pushf
+                ; mov rsi, [rbp-16]
             );
             self.call(clock);
             self.reset_cycles();
+            dynasm!(self.assembler
+                ; .arch x64
+                ; popf
+            );
         }
-        self.current_cycles += instruction.cycles;
+        //self.current_cycles += instruction.cycles;
 
         if let Some(label_id) = instruction.label {
             let label = self.get_label(label_id);
@@ -126,6 +131,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; =>label
             );
         }
+
+        // TODO: improve accuracy here...
+        self.add_const_cycles(instruction.cycles);
 
         // Handle internal branch.
         if let Some(label_id) = instruction.branch_to {
@@ -503,7 +511,15 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn add_const_cycles(&mut self, cycles: usize) {
         dynasm!(self.assembler
             ; .arch x64
+            //; sbb edx, edx
+            //; clc
+            //; mov rax, cycles as i64
+            //; adcx rax, QWORD [rbp-16]
+            //; mov QWORD [rbp-16], rax
+            //; rcr edx, 1
+            ; pushf
             ; add QWORD [rbp-16], cycles as i32
+            ; popf
         );
     }
 
@@ -511,7 +527,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     fn add_dyn_cycles(&mut self, reg: u8) {
         dynasm!(self.assembler
             ; .arch x64
+            ; pushf
             ; add QWORD [rbp-16], Rq(reg)
+            ; popf
         );
     }
 

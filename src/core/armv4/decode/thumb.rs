@@ -1,11 +1,5 @@
 /// ARMv4 Thumb Instruction Set
 
-/*use super::{
-    super::constants::*,
-    super::ARMCondition,
-    instructions::*,
-    decode::*
-};*/
 use super::decode_cond;
 use crate::{
     core::{
