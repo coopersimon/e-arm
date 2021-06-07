@@ -112,6 +112,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             let clock = wrap_clock::<M, T> as i64;
             dynasm!(self.assembler
                 ; .arch x64
+                ; mov rax, [rbp-8]
+                ; mov DWORD [rax+60], pc_val as i32
                 ; pushf
                 ; mov rsi, [rbp-16]
             );
@@ -1655,7 +1657,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
     fn tbl_hi(&mut self, offset: u32) {
         //self.push_flags();
-        let ret_addr = self.current_pc.wrapping_sub(constants::T_SIZE);
+        let ret_addr = self.current_pc.wrapping_sub(constants::T_SIZE) | 1;
         dynasm!(self.assembler
             ; .arch x64
             ; mov eax, DWORD ret_addr as i32
@@ -2002,6 +2004,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
 // CPU wrappers
 pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, dest: u32) {
+    //println!("call sub");
     cpu.as_mut().unwrap().call_subroutine(dest);
 }
 

@@ -115,9 +115,13 @@ impl Validator {
                 ARMv4InstructionType::TB{offset} => {
                     let final_offset = offset.wrapping_add(i_size * 2);
                     let dest = self.validate_branch(final_offset)?;
-                    instruction.branch_to = Some(label_idx);
-                    labels.insert(dest, label_idx);
-                    label_idx += 1;
+                    if let Some(existing_label_idx) = labels.get(&dest) {
+                        instruction.branch_to = Some(*existing_label_idx);
+                    } else {
+                        instruction.branch_to = Some(label_idx);
+                        labels.insert(dest, label_idx);
+                        label_idx += 1;
+                    }
 
                     self.cycles_since_clock = 0;
                     instruction.clock = true;

@@ -187,7 +187,10 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         };
         match result {
             Ok(s) => Subroutine::Compiled(s),
-            Err(_) => Subroutine::CannotCompile
+            Err(e) => {
+                //println!("Cannot compile: {:?}", e);
+                Subroutine::CannotCompile
+            }
         }
     }
 }
@@ -213,6 +216,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.flush_pipeline();
     }
     fn call_subroutine(&mut self, dest: u32) {
+        if dest > 0x0800_0000 {
+            //println!("call {:X}, ret: {:X} (t: {})", dest, self.regs[LINK_REG], self.cpsr.contains(CPSR::T));
+        }
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
 
@@ -239,9 +245,10 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
         match subroutine {
             Some(s) => {
+                //println!("jitted");
                 s.call(self);
                 self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
-                self.regs[PC_REG] = self.regs[PC_REG] & 0xFFFF_FFFE;
+                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
             },
             None => {
                 let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
@@ -253,6 +260,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
                     }
                 }
             }
+        }
+        if self.regs[PC_REG] > 0x0800_0000 {
+            //println!("ret {:X} (t: {})", self.regs[PC_REG], self.cpsr.contains(CPSR::T));
         }
     }
 
@@ -349,6 +359,14 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
             self.shadow_registers();
             self.flush_pipeline();
+
+            let return_location = self.regs[LINK_REG] - I_SIZE;
+            loop {
+                self.step();
+                if return_location == self.regs[PC_REG] {
+                    break;
+                }
+            }
         }
     }
     fn fast_interrupt(&mut self) {
@@ -364,6 +382,14 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
             self.shadow_registers();
             self.flush_pipeline();
+
+            let return_location = self.regs[LINK_REG] - I_SIZE;
+            loop {
+                self.step();
+                if return_location == self.regs[PC_REG] {
+                    break;
+                }
+            }
         }
     }
     fn software_exception(&mut self) {
