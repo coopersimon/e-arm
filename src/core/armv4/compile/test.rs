@@ -12,7 +12,8 @@ macro_rules! run_test {
             $(
                 cpu.write_reg($reg, $start);
             )*
-            for _ in 0..($mem.instructions.len()) {
+            cpu.write_reg(14, 0xCAFE_BABE);
+            while cpu.read_reg(15) != 0xCAFE_BABE {
                 cpu.step();
             }
             $(
@@ -315,6 +316,7 @@ fn test_imm_shifts() {
 #[test]
 fn test_reg_shifts() {
     let mut mem = TestMem::new().instructions(vec![
+        0xE093_3003,    // ADDS R3, R3, R3  -- Clear carry flag
         0xE1A0_5450,    // MOV R5, (R0 ASR R4)
         0x228B_B001,    // ADDCS R11, R11, #1
         0xE1A0_6430,    // MOV R6, (R0 LSR R4)
@@ -1492,6 +1494,99 @@ fn test_load_pc_relative() {
     match routine {
         Ok(routine) => {
             run_test!(mem, routine, [0, 0, 0xABCD_EF01u32]);
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_loop() {
+    let mut mem = TestMem::new().instructions(vec![
+        0xE282_2001,    // ADD R2, R2, #1
+        0xE152_0001,    // CMP R2, R1
+        0x1AFF_FFFC,    // BNE #-16
+        0xE3A0_300A,    // MOV R3, #10
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x0, 0x20],
+                [3, 0, 10]
+            );
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_cond_hi() {
+    let mut mem = TestMem::new().instructions(vec![
+        0xE152_0001,    // CMP R2, R1
+        0x8A00_0000,    // BHI #0
+        0xE3A0_A00A,    // MOV R10, #10
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x20, 0x20],
+                [10, 0, 10]
+            );
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x25, 0x25],
+                [10, 0, 0]
+            );
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x15, 0x15],
+                [10, 0, 10]
+            );
+        },
+        Err(e) => panic!("unexpected err {:?}", e)
+    }
+}
+
+#[test]
+fn test_cond_ls() {
+    let mut mem = TestMem::new().instructions(vec![
+        0xE152_0001,    // CMP R2, R1
+        0x9A00_0000,    // BLS #0
+        0xE3A0_A00A,    // MOV R10, #10
+        0xE1A0_F00E,    // MOV R15, R14
+        0x0,
+        0x0
+    ]).build();
+    let mut compiler = super::ARMv4Compiler::new();
+    let routine = compiler.compile_arm::<TestMem, ARM7TDMI<_>>(0, &mut mem);
+    match routine {
+        Ok(routine) => {
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x20, 0x20],
+                [10, 0, 0]
+            );
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x25, 0x25],
+                [10, 0, 10]
+            );
+            run_test!(mem, routine,
+                [1, 0x20, 0x20],
+                [2, 0x15, 0x15],
+                [10, 0, 0]
+            );
         },
         Err(e) => panic!("unexpected err {:?}", e)
     }

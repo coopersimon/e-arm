@@ -300,11 +300,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     ),
                     ARMCondition::CS => dynasm!(self.assembler
                         ; .arch x64
-                        ; jnc =>skip_label
+                        ; jc =>skip_label
                     ),
                     ARMCondition::CC => dynasm!(self.assembler
                         ; .arch x64
-                        ; jc =>skip_label
+                        ; jnc =>skip_label
                     ),
                     ARMCondition::MI => dynasm!(self.assembler
                         ; .arch x64
@@ -322,12 +322,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                         ; .arch x64
                         ; jo =>skip_label
                     ),
-                    // Not sure about this one...
                     ARMCondition::HI => dynasm!(self.assembler
                         ; .arch x64
                         ; jna =>skip_label
                     ),
-                    // ...or this one
                     ARMCondition::LS => dynasm!(self.assembler
                         ; .arch x64
                         ; ja =>skip_label
@@ -600,6 +598,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; shl eax, shift_val
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -615,6 +614,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; shr eax, shift_val
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -630,6 +630,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; sar eax, shift_val
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -645,6 +646,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; ror eax, shift_val
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -660,6 +662,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     ; .arch x64
                     ; shl eax, 1    // Fill carry
                     ; mov eax, 0
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -674,6 +677,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; sar eax, 31
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -687,7 +691,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 }
                 dynasm!(self.assembler
                     ; .arch x64
+                    ; cmc
                     ; rcr eax, 1
+                    ; cmc
                 );
                 DataOperand::Reg(EAX)
             },
@@ -766,6 +772,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; pushf
+                    ; cmc
                     ; rcr eax, 1
                     ; popf
                 );
@@ -820,6 +827,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 );
             },
         }
+        dynasm!(self.assembler
+            ; .arch x64
+            ; cmc
+        );
         EAX
     }
 
@@ -1060,6 +1071,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
     }
 
+    // TODO: logical ops:
+    // if we are setting the flags, _and_ we have a shift op as op2,
+    // we need to preserve the carry flag.
+
     fn and(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
         self.alu_instr(rd, rn, op2, set_flags, true, |c, op1, op2| {
             match op2 {
@@ -1148,6 +1163,12 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                     ; add Rd(op1), Rd(r)
                 )
             }
+            if set_flags {
+                dynasm!(c.assembler
+                    ; .arch x64
+                    ; cmc
+                )
+            }
         })
     }
 
@@ -1156,11 +1177,19 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
+                    ; cmc
                     ; adc Rd(op1), DWORD i
                 ),
                 DataOperand::Reg(r) => dynasm!(c.assembler
                     ; .arch x64
+                    ; cmc
                     ; adc Rd(op1), Rd(r)
+                )
+            }
+            if set_flags {
+                dynasm!(c.assembler
+                    ; .arch x64
+                    ; cmc
                 )
             }
         })
@@ -1179,12 +1208,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 )
             }
         });
-        if set_flags {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; cmc
-            )
-        }
     }
 
     fn sbc(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
@@ -1192,22 +1215,14 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             match op2 {
                 DataOperand::Imm(i) => dynasm!(c.assembler
                     ; .arch x64
-                    ; cmc
                     ; sbb Rd(op1), DWORD i
                 ),
                 DataOperand::Reg(r) => dynasm!(c.assembler
                     ; .arch x64
-                    ; cmc
                     ; sbb Rd(op1), Rd(r)
                 )
             }
         });
-        if set_flags {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; cmc
-            )
-        }
     }
 
     fn rsb(&mut self, rd: usize, rn: usize, op2: &ALUOperand, set_flags: bool) {
@@ -1243,11 +1258,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.writeback_dest(rd, EBX);
         if !set_flags {
             self.pop_flags();
-        } else {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; cmc
-            )
         }
     }
 
@@ -1271,14 +1281,12 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             let pc_const = self.current_pc as i32;
             dynasm!(self.assembler
                 ; .arch x64
-                ; cmc
                 ; sbb ebx, DWORD pc_const
             );
         } else {
             let op1_reg = self.get_register(rn, EAX);
             dynasm!(self.assembler
                 ; .arch x64
-                ; cmc
                 ; sbb ebx, Rd(op1_reg)
             );
         }
@@ -1286,11 +1294,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         self.writeback_dest(rd, EBX);
         if !set_flags {
             self.pop_flags();
-        } else {
-            dynasm!(self.assembler
-                ; .arch x64
-                ; cmc
-            )
         }
     }
 
@@ -1337,12 +1340,10 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
                 ; cmp Rd(op1_reg), DWORD i
-                ; cmc
             ),
             DataOperand::Reg(r) => dynasm!(self.assembler
                 ; .arch x64
                 ; cmp Rd(op1_reg), Rd(r)
-                ; cmc
             )
         }
     }
@@ -1360,10 +1361,12 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             DataOperand::Imm(i) => dynasm!(self.assembler
                 ; .arch x64
                 ; add ebx, DWORD i
+                ; cmc
             ),
             DataOperand::Reg(r) => dynasm!(self.assembler
                 ; .arch x64
                 ; add ebx, Rd(r)
+                ; cmc
             )
         }
     }
@@ -1576,11 +1579,11 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ),
             ARMCondition::CS => dynasm!(self.assembler
                 ; .arch x64
-                ; jc =>label
+                ; jnc =>label
             ),
             ARMCondition::CC => dynasm!(self.assembler
                 ; .arch x64
-                ; jnc =>label
+                ; jc =>label
             ),
             ARMCondition::MI => dynasm!(self.assembler
                 ; .arch x64
@@ -2004,7 +2007,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
 // CPU wrappers
 pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, dest: u32) {
-    //println!("call sub");
     cpu.as_mut().unwrap().call_subroutine(dest);
 }
 
