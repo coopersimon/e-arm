@@ -36,7 +36,7 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
 
     current_pc: u32,
-    current_cycles: usize,
+    //current_cycles: usize,
 
     /// Offset from the first half of a tbl operation
     tbl_offset: u32,
@@ -52,7 +52,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             label_table: std::collections::BTreeMap::new(),
 
             current_pc: 0,
-            current_cycles: 0,
+            //current_cycles: 0,
 
             tbl_offset: 0,
 
@@ -108,6 +108,25 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
     pub fn codegen(&mut self, instruction: &DecodedInstruction, pc_val: u32) {
         self.current_pc = pc_val;
 
+        //self.current_cycles += instruction.cycles;
+
+        if let Some(label_id) = instruction.label {
+            let sub_cycles = instruction.cycles * 2;
+            // TODO: N+2S
+            let add_cycles = instruction.cycles * 3;
+            let label = self.get_label(label_id);
+            dynasm!(self.assembler
+                ; .arch x64
+                ; pushf
+                ; sub QWORD [rbp-16], sub_cycles as i32
+                ; =>label
+                ; add QWORD [rbp-16], add_cycles as i32
+                ; popf
+            );
+        } else {
+            self.add_const_cycles(instruction.cycles);
+        }
+
         if instruction.clock {
             let clock = wrap_clock::<M, T> as i64;
             dynasm!(self.assembler
@@ -124,18 +143,6 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; popf
             );
         }
-        //self.current_cycles += instruction.cycles;
-
-        if let Some(label_id) = instruction.label {
-            let label = self.get_label(label_id);
-            dynasm!(self.assembler
-                ; .arch x64
-                ; =>label
-            );
-        }
-
-        // TODO: improve accuracy here...
-        self.add_const_cycles(instruction.cycles);
 
         // Handle internal branch.
         if let Some(label_id) = instruction.branch_to {
@@ -745,7 +752,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 );
                 DataOperand::Reg(EAX)
             },
-            ShiftOperand::LSR32{reg} => {
+            ShiftOperand::LSR32{..} => {
                 dynasm!(self.assembler
                     ; .arch x64
                     ; mov eax, 0

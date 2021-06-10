@@ -73,7 +73,7 @@ pub enum CompilerError {
 }
 
 /// Location of return address.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReturnLocation {
     Reg(usize),
     Stack(i32)

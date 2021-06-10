@@ -18,9 +18,9 @@ use super::{
 /// Maximum length of subroutine in instructions.
 const SUBROUTINE_MAX_LEN: u32 = 256;
 /// Maximum amount of cycles between clock calls.
-const MAX_CYCLES: usize = 100;
+const MAX_CYCLES: usize = 30;
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 struct DecodeInfo {
     ret: ReturnLocation,
     stack_offset: i32,
@@ -93,6 +93,17 @@ impl Validator {
                 self.cycles_since_clock = 0;
                 instruction.clock = true;
             }
+
+            // If this is a branch dest, check the meta is the same.
+            if let Some(meta_data) = self.instr_meta.get(&self.current_addr) {
+                if meta_data.ret != self.current_meta.ret {
+                    //println!("Dest: {:?} != {:?}", *meta_data, self.current_meta);
+                    return Err(CompilerError::InvalidLocalBranch);
+                } else if meta_data.stack_offset != self.current_meta.stack_offset {
+                    self.current_meta.stack_offset = meta_data.stack_offset;
+                }
+            }
+
             // Take certain actions depending on the instruction...
             match &decoded.instr {
                 // Check the instruction is allowed:
@@ -108,7 +119,10 @@ impl Validator {
                 ARMv4InstructionType::LDC{..} |
                 ARMv4InstructionType::STC{..} |
                 ARMv4InstructionType::MRS{..} |
-                ARMv4InstructionType::MSR{..} => return Err(CompilerError::IllegalInstruction),
+                ARMv4InstructionType::MSR{..} => {
+                    //println!("{}", decoded);
+                    return Err(CompilerError::IllegalInstruction);
+                },
 
                 // Take a note of internal branch destinations:
                 ARMv4InstructionType::B{offset} |
@@ -185,31 +199,29 @@ impl Validator {
                     }
                 } else {
                     // Only return BX instructions are allowed.
+                    //println!("{} - return is @ {:?}", decoded, self.current_meta);
                     return Err(CompilerError::IllegalInstruction);
                 },
 
-                // Check for valid ALU ops
-                ARMv4InstructionType::MVN{rd: 15, ..} |
-                ARMv4InstructionType::AND{rd: 15, ..} |
-                ARMv4InstructionType::EOR{rd: 15, ..} |
-                ARMv4InstructionType::ORR{rd: 15, ..} |
-                ARMv4InstructionType::BIC{rd: 15, ..} |
-                ARMv4InstructionType::ADD{rd: 15, ..} |
-                ARMv4InstructionType::SUB{rd: 15, ..} |
-                ARMv4InstructionType::RSB{rd: 15, ..} |
-                ARMv4InstructionType::ADC{rd: 15, ..} |
-                ARMv4InstructionType::SBC{rd: 15, ..} |
-                ARMv4InstructionType::RSC{rd: 15, ..} => return Err(CompilerError::DynamicPCManipulation),
-                _ => {}
-            }
+                // Check for specific THUMB instruction: ADD SP, #nn
+                ARMv4InstructionType::ADD{rd: constants::SP_REG, rn: constants::SP_REG, op2: ALUOperand::Normal(ShiftOperand::Immediate(i)), set_flags: false} => {
+                    self.current_meta.stack_offset += *i as i32;
+                },
 
-            // If this is a branch dest, check the meta is the same.
-            if let Some(meta_data) = self.instr_meta.get(&self.current_addr) {
-                if *meta_data != self.current_meta {
-                    return Err(CompilerError::InvalidLocalBranch);
-                }
-            } else {
-                self.instr_meta.insert(self.current_addr, self.current_meta.clone());
+                // Check for valid ALU ops
+                ARMv4InstructionType::MOV{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::MVN{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::AND{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::EOR{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::ORR{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::BIC{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::ADD{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::SUB{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::RSB{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::ADC{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::SBC{rd: constants::PC_REG, ..} |
+                ARMv4InstructionType::RSC{rd: constants::PC_REG, ..} => return Err(CompilerError::DynamicPCManipulation),
+                _ => {}
             }
 
             // Check the subroutine isn't too long.
