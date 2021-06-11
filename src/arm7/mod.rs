@@ -13,7 +13,7 @@ use crate::core::{
     ARMv4Compiler,
     decode_arm_v4,
     decode_thumb_v4,
-    Subroutine, RUN_THRESHOLD
+    Subroutine, JITObject, RUN_THRESHOLD
 };
 use crate::common::u32;
 use crate::memory::{
@@ -25,6 +25,7 @@ use crate::{
     Debugger, CPUState
 };
 
+use std::rc::Rc;
 use std::collections::HashMap;
 
 /// ARM7TDMI processor.
@@ -53,7 +54,7 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     decoded_instr: Option<u32>,
     fetch_type:    MemCycleType,
 
-    jit_cache:      HashMap<u32, Subroutine<Self>>
+    jit_cache:      HashMap<u32, Subroutine<Self>>,
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
@@ -177,6 +178,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
 
     fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
         if from < 0x0800_0000 {
+            //println!("Cannot compile: in RAM");
             return Subroutine::CannotCompile;
         }
         let mut compiler = ARMv4Compiler::new();
@@ -186,11 +188,36 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             compiler.compile_arm::<M, Self>(from, &mut self.mem)
         };
         match result {
-            Ok(s) => Subroutine::Compiled(s),
+            Ok(s) => {
+                Subroutine::Compiled(s)
+            },
             Err(e) => {
-                //println!("Cannot compile: {:?}", e);
                 Subroutine::CannotCompile
             }
+        }
+    }
+
+    #[inline]
+    fn jit_lookup(&mut self, target: u32) -> Option<Rc<JITObject<Self>>> {
+        match self.jit_cache.get(&target).cloned() {
+            None => {
+                self.jit_cache.insert(target, Subroutine::Run(1));
+                None
+            },
+            Some(Subroutine::Run(RUN_THRESHOLD)) => {
+                let jit_routine = self.jit_compile_subroutine(target);
+                self.jit_cache.insert(target, jit_routine.clone());
+                match jit_routine {
+                    Subroutine::Compiled(s) => Some(s),
+                    _ => None,
+                }
+            },
+            Some(Subroutine::Run(n)) => {
+                self.jit_cache.insert(target, Subroutine::Run(n + 1));
+                None
+            },
+            Some(Subroutine::CannotCompile) => None,
+            Some(Subroutine::Compiled(s)) => Some(s),
         }
     }
 }
@@ -216,41 +243,31 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.flush_pipeline();
     }
     fn call_subroutine(&mut self, dest: u32) {
-        if dest > 0x0800_0000 {
-            //println!("call {:X}, ret: {:X} (t: {})", dest, self.regs[LINK_REG], self.cpsr.contains(CPSR::T));
-        }
-        self.regs[PC_REG] = dest;
         self.flush_pipeline();
 
-        let subroutine = match self.jit_cache.get(&dest).cloned() {
-            None => {
-                self.jit_cache.insert(dest, Subroutine::Run(1));
-                None
-            },
-            Some(Subroutine::Run(RUN_THRESHOLD)) => {
-                let jit_routine = self.jit_compile_subroutine(dest);
-                self.jit_cache.insert(dest, jit_routine.clone());
-                match jit_routine {
-                    Subroutine::Compiled(s) => Some(s),
-                    _ => None,
-                }
-            },
-            Some(Subroutine::Run(n)) => {
-                self.jit_cache.insert(dest, Subroutine::Run(n + 1));
-                None
-            },
-            Some(Subroutine::CannotCompile) => None,
-            Some(Subroutine::Compiled(s)) => Some(s),
-        };
-
-        match subroutine {
-            Some(s) => {
-                //println!("jitted");
-                s.call(self);
+        match self.jit_lookup(dest) {
+            Some(subroutine) => {
+                subroutine.call(self);
                 self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
                 self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
             },
             None => {
+                self.regs[PC_REG] = dest.wrapping_sub(self.cpsr.instr_size());
+            }
+        }
+    }
+    fn call_sub_from_jit(&mut self, dest: u32) {
+        self.flush_pipeline();
+
+        match self.jit_lookup(dest) {
+            Some(subroutine) => {
+                subroutine.call(self);
+                self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
+                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
+            },
+            None => {
+                // Need to spin up another interpreter.
+                self.regs[PC_REG] = dest;
                 let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
                 loop {
                     self.step();
@@ -260,9 +277,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
                     }
                 }
             }
-        }
-        if self.regs[PC_REG] > 0x0800_0000 {
-            //println!("ret {:X} (t: {})", self.regs[PC_REG], self.cpsr.contains(CPSR::T));
         }
     }
 

@@ -111,6 +111,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn call_subroutine(&mut self, _dest: u32) {
         // TODO
     }
+    fn call_sub_from_jit(&mut self, dest: u32) {
+        self.call_subroutine(dest);
+    }
     fn clock(&mut self, _cycles: usize) {
 
     }

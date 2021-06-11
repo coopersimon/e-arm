@@ -119,7 +119,9 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; .arch x64
                 ; pushf
                 ; sub QWORD [rbp-16], sub_cycles as i32
+                ; popf
                 ; =>label
+                ; pushf
                 ; add QWORD [rbp-16], add_cycles as i32
                 ; popf
             );
@@ -2014,7 +2016,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
 // CPU wrappers
 pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, dest: u32) {
-    cpu.as_mut().unwrap().call_subroutine(dest);
+    cpu.as_mut().unwrap().call_sub_from_jit(dest);
 }
 
 pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) -> *mut u32 {
