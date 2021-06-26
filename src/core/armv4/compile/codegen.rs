@@ -5,8 +5,10 @@ use dynasmrt::{
         X64Relocation
     }
 };
-use std::rc::Rc;
-use std::marker::PhantomData;
+use std::{
+    rc::Rc,
+    marker::PhantomData
+};
 use crate::{
     Mem32, ARMCore, MemCycleType,
     core::{
@@ -36,6 +38,7 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
 
     current_pc: u32,
+    i_size: u32,
     //current_cycles: usize,
 
     /// Offset from the first half of a tbl operation
@@ -46,19 +49,20 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
 }
 
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(start_pc: u32, i_size: u32) -> Box<Self> {
+        Box::new(Self {
             assembler: Assembler::new().unwrap(),
             label_table: std::collections::BTreeMap::new(),
 
-            current_pc: 0,
+            current_pc: start_pc,
+            i_size: i_size,
             //current_cycles: 0,
 
             tbl_offset: 0,
 
             _unused_m: PhantomData,
             _unused_t: PhantomData
-        }
+        })
     }
 
     pub fn prelude(&mut self) {
@@ -105,8 +109,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         Rc::new(JITObject::new(buf))
     }
 
-    pub fn codegen(&mut self, instruction: &DecodedInstruction, pc_val: u32) {
-        self.current_pc = pc_val;
+    pub fn codegen(&mut self, instruction: &DecodedInstruction) {
 
         //self.current_cycles += instruction.cycles;
 
@@ -134,7 +137,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             dynasm!(self.assembler
                 ; .arch x64
                 ; mov rax, [rbp-8]
-                ; mov DWORD [rax+60], pc_val as i32
+                ; mov [rax+52], r15d
+                ; mov DWORD [rax+60], self.current_pc as i32
                 ; pushf
                 ; mov rsi, [rbp-16]
             );
@@ -143,6 +147,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             dynasm!(self.assembler
                 ; .arch x64
                 ; popf
+                ; mov rax, [rbp-8]
+                ; mov r15d, [rax+52]
             );
         }
 
@@ -150,13 +156,14 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         if let Some(label_id) = instruction.branch_to {
             let label = self.get_label(label_id);
             self.b(instruction.instruction.cond, label);
+            self.current_pc += self.i_size;
             return;
         }
 
         let skip_label = self.codegen_cond(instruction.instruction.cond);
 
         match &instruction.instruction.instr {
-            ARMv4InstructionType::SWI{comment} => unimplemented!("SWI not implemented yet"),
+            ARMv4InstructionType::SWI{comment} => self.swi(*comment, self.current_pc - self.i_size),
             ARMv4InstructionType::UND => unimplemented!("UND not permitted for JITting"),
 
             ARMv4InstructionType::MOV{rd, op2, set_flags} => self.mov(*rd, op2, *set_flags),
@@ -229,6 +236,8 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; =>label
             );
         }
+
+        self.current_pc += self.i_size;
     }
 }
 
@@ -1020,6 +1029,41 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
 // Instructions
 impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+
+    fn swi(&mut self, comment: u32, pc: u32) {
+        let software_exception = wrap_software_exception::<M, T> as i64;
+        dynasm!(self.assembler
+            ; .arch x64
+            // Write back registers
+            ; mov rbx, [rbp-8]
+            ; mov [rbx], r8d
+            ; mov [rbx+4], r9d
+            ; mov [rbx+8], r10d
+            ; mov [rbx+12], r11d
+            ; mov [rbx+16], r12d
+            ; mov [rbx+20], r13d
+            ; mov [rbx+24], r14d
+            ; mov [rbx+52], r15d
+            ; mov DWORD [rax+60], pc as i32
+
+            ; push rdi
+            ; mov rax, QWORD software_exception
+            ; mov esi, DWORD comment as i32
+            ; call rax
+            ; pop rdi
+
+            // Reload registers
+            ; mov r8d, [rbx]
+            ; mov r9d, [rbx+4]
+            ; mov r10d, [rbx+8]
+            ; mov r11d, [rbx+12]
+            ; mov r12d, [rbx+16]
+            ; mov r13d, [rbx+20]
+            ; mov r14d, [rbx+24]
+            ; mov r15d, [rbx+52]
+        );
+    }
+
     fn mov(&mut self, rd: usize, op2: &ALUOperand, set_flags: bool) {
         let dest = self.get_mapped_register(rd);
         let dest_reg = dest.unwrap_or(EBX);
@@ -2016,11 +2060,16 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
 // CPU wrappers
 pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, dest: u32) {
-    cpu.as_mut().unwrap().call_sub_from_jit(dest);
+    cpu.as_mut().unwrap().jit_call_subroutine(dest);
 }
 
 pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) -> *mut u32 {
     cpu.as_mut().unwrap().mut_regs().as_mut_ptr()
+}
+
+pub unsafe extern "Rust" fn wrap_software_exception<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, _comment: u32) {
+    // TODO: swi_hook
+    cpu.as_mut().unwrap().software_exception();
 }
 
 pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
@@ -2060,5 +2109,5 @@ pub unsafe extern "Rust" fn wrap_store_byte<M: Mem32<Addr = u32>, T: ARMCore<M>>
 }
 
 pub unsafe extern "Rust" fn wrap_clock<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, cycles: usize) {
-    cpu.as_mut().unwrap().clock(cycles);
+    cpu.as_mut().unwrap().jit_clock(cycles);
 }

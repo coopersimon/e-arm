@@ -15,6 +15,8 @@ use super::{
     }
 };
 
+/// Minimum length of subroutine in instructions.
+const SUBROUTINE_MIN_LEN: usize = 10;
 /// Maximum length of subroutine in instructions.
 const SUBROUTINE_MAX_LEN: u32 = 256;
 /// Maximum amount of cycles between clock calls.
@@ -27,6 +29,8 @@ struct DecodeInfo {
 }
 
 pub struct Validator {
+    /// The list of instructions.
+    instructions:   Vec<DecodedInstruction>,
     /// The address the validator is currently validating.
     current_addr:   u32,
     /// The first address of the subroutine.
@@ -46,6 +50,7 @@ pub struct Validator {
 impl Validator {
     pub fn new(addr: u32) -> Self {
         Self {
+            instructions: Vec::with_capacity(SUBROUTINE_MAX_LEN as usize),
             current_addr: addr,
             start_addr: addr,
             end_addr: addr + (SUBROUTINE_MAX_LEN * constants::I_SIZE),
@@ -59,9 +64,8 @@ impl Validator {
         }
     }
 
-    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
+    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
         let i_size = if thumb {constants::T_SIZE} else {constants::I_SIZE};
-        let mut instructions = Vec::new();
         let mut labels = BTreeMap::new();
         let mut label_idx = 0;
 
@@ -109,8 +113,7 @@ impl Validator {
                 // Check the instruction is allowed:
                 ARMv4InstructionType::LDM{load_from_user: true, ..} |
                 ARMv4InstructionType::STM{load_from_user: true, ..} |
-                // TODO:
-                ARMv4InstructionType::SWI{..} |
+                //ARMv4InstructionType::SWI{..} |
                 ARMv4InstructionType::UND |
 
                 ARMv4InstructionType::MRC{..} |
@@ -149,8 +152,8 @@ impl Validator {
                         instruction.clock = true;
                         instruction.ret = true;
                         if self.branches.is_empty() {
-                            instructions.push(instruction);
-                            return self.resolve_labels(instructions, labels, i_size);
+                            self.instructions.push(instruction);
+                            return self.resolve_labels(labels, i_size);
                         }
                     } else {
                         self.current_meta.ret = ReturnLocation::Reg(*rd);
@@ -169,8 +172,8 @@ impl Validator {
                         instruction.clock = true;
                         instruction.ret = true;
                         if self.branches.is_empty() {
-                            instructions.push(instruction);
-                            return self.resolve_labels(instructions, labels, i_size);
+                            self.instructions.push(instruction);
+                            return self.resolve_labels(labels, i_size);
                         }
                     }
                 },
@@ -181,8 +184,8 @@ impl Validator {
                         instruction.clock = true;
                         instruction.ret = true;
                         if self.branches.is_empty() {
-                            instructions.push(instruction);
-                            return self.resolve_labels(instructions, labels, i_size);
+                            self.instructions.push(instruction);
+                            return self.resolve_labels(labels, i_size);
                         }
                     }
                 },
@@ -194,8 +197,8 @@ impl Validator {
                     instruction.ret = true;
                     // We only return if we have covered all the possible branches, and the return value is written to PC.
                     if self.branches.is_empty() {
-                        instructions.push(instruction);
-                        return self.resolve_labels(instructions, labels, i_size);
+                        self.instructions.push(instruction);
+                        return self.resolve_labels(labels, i_size);
                     }
                 } else {
                     // Only return BX instructions are allowed.
@@ -230,20 +233,24 @@ impl Validator {
                 return Err(CompilerError::TooLong);
             }
 
-            instructions.push(instruction);
+            self.instructions.push(instruction);
         }
     }
 }
 
 impl Validator {
     // Resolve label destinations.
-    fn resolve_labels(&self, mut instructions: Vec<DecodedInstruction>, labels: BTreeMap<u32, usize>, i_size: u32) -> Result<Vec<DecodedInstruction>, CompilerError> {
-        for (label_addr, label_idx) in labels.iter() {
-            let i = (label_addr - self.start_addr) / i_size;
-            instructions[i as usize].label = Some(*label_idx);
+    fn resolve_labels(mut self, labels: BTreeMap<u32, usize>, i_size: u32) -> Result<Vec<DecodedInstruction>, CompilerError> {
+        if self.instructions.len() < SUBROUTINE_MIN_LEN {
+            return Err(CompilerError::TooShort);
         }
 
-        Ok(instructions)
+        for (label_addr, label_idx) in labels.iter() {
+            let i = (label_addr - self.start_addr) / i_size;
+            self.instructions[i as usize].label = Some(*label_idx);
+        }
+
+        Ok(self.instructions)
     }
 
     // Return dest address.

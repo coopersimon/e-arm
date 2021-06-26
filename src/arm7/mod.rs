@@ -25,8 +25,10 @@ use crate::{
     Debugger, CPUState
 };
 
-use std::rc::Rc;
-use std::collections::HashMap;
+use std::{
+    rc::Rc,
+    collections::HashMap
+};
 
 /// ARM7TDMI processor.
 /// 
@@ -177,8 +179,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     }
 
     fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
-        if from < 0x0800_0000 {
-            //println!("Cannot compile: in RAM");
+        if from < 0x0800_0000 && from >= 0x4000 {
             return Subroutine::CannotCompile;
         }
         let mut compiler = ARMv4Compiler::new();
@@ -243,8 +244,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.flush_pipeline();
     }
     fn call_subroutine(&mut self, dest: u32) {
-        self.flush_pipeline();
-
         match self.jit_lookup(dest) {
             Some(subroutine) => {
                 subroutine.call(self);
@@ -255,10 +254,10 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
                 self.regs[PC_REG] = dest.wrapping_sub(self.cpsr.instr_size());
             }
         }
-    }
-    fn call_sub_from_jit(&mut self, dest: u32) {
-        self.flush_pipeline();
 
+        self.flush_pipeline();
+    }
+    fn jit_call_subroutine(&mut self, dest: u32) {
         match self.jit_lookup(dest) {
             Some(subroutine) => {
                 subroutine.call(self);
@@ -267,6 +266,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             },
             None => {
                 // Need to spin up another interpreter.
+                self.flush_pipeline();
                 self.regs[PC_REG] = dest;
                 let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
                 loop {
@@ -278,13 +278,45 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
                 }
             }
         }
+
+        self.flush_pipeline();
     }
 
     fn clock(&mut self, cycles: usize) {
         match self.mem.clock(cycles) {
             Some(ExternalException::RST) => self.reset(),
-            Some(ExternalException::FIQ) => self.fast_interrupt(),
-            Some(ExternalException::IRQ) => self.interrupt(),
+            Some(ExternalException::FIQ) => if !self.cpsr.contains(CPSR::F) && self.decoded_instr.is_some() {
+                self.fast_interrupt();
+            },
+            Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) && self.decoded_instr.is_some() {
+                self.interrupt();
+            },
+            None => {}
+        }
+    }
+    fn jit_clock(&mut self, cycles: usize) {
+        match self.mem.clock(cycles) {
+            Some(ExternalException::RST) => self.reset(),
+            Some(ExternalException::FIQ) => if !self.cpsr.contains(CPSR::F) {
+                self.fast_interrupt();
+                let return_location = self.regs[LINK_REG] - I_SIZE;
+                loop {
+                    self.step();
+                    if return_location == self.regs[PC_REG] {
+                        break;
+                    }
+                }
+            },
+            Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) {
+                self.interrupt();
+                let return_location = self.regs[LINK_REG] - I_SIZE;
+                loop {
+                    self.step();
+                    if return_location == self.regs[PC_REG] {
+                        break;
+                    }
+                }
+            },
             None => {}
         }
     }
@@ -361,50 +393,30 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.flush_pipeline();
     }
     fn interrupt(&mut self) {
-        if !self.cpsr.contains(CPSR::I) && self.decoded_instr.is_some() {
-            self.shadow_registers();
-            self.irq_regs[1] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
-            self.regs[PC_REG] = 0x0000_0018;
-            self.irq_spsr = self.cpsr;
+        self.shadow_registers();
+        self.irq_regs[1] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
+        self.regs[PC_REG] = 0x0000_0018;
+        self.irq_spsr = self.cpsr;
 
-            self.cpsr.set_mode(Mode::IRQ);
-            self.cpsr.remove(CPSR::T);
-            self.cpsr.insert(CPSR::I);
+        self.cpsr.set_mode(Mode::IRQ);
+        self.cpsr.remove(CPSR::T);
+        self.cpsr.insert(CPSR::I);
 
-            self.shadow_registers();
-            self.flush_pipeline();
-
-            let return_location = self.regs[LINK_REG] - I_SIZE;
-            loop {
-                self.step();
-                if return_location == self.regs[PC_REG] {
-                    break;
-                }
-            }
-        }
+        self.shadow_registers();
+        self.flush_pipeline();
     }
     fn fast_interrupt(&mut self) {
-        if !self.cpsr.contains(CPSR::F) && self.decoded_instr.is_some() {
-            self.shadow_registers();
-            self.fiq_regs[6] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
-            self.regs[PC_REG] = 0x0000_001C;
-            self.fiq_spsr = self.cpsr;
+        self.shadow_registers();
+        self.fiq_regs[6] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
+        self.regs[PC_REG] = 0x0000_001C;
+        self.fiq_spsr = self.cpsr;
 
-            self.cpsr.set_mode(Mode::FIQ);
-            self.cpsr.remove(CPSR::T);
-            self.cpsr.insert(CPSR::I | CPSR::F);
+        self.cpsr.set_mode(Mode::FIQ);
+        self.cpsr.remove(CPSR::T);
+        self.cpsr.insert(CPSR::I | CPSR::F);
 
-            self.shadow_registers();
-            self.flush_pipeline();
-
-            let return_location = self.regs[LINK_REG] - I_SIZE;
-            loop {
-                self.step();
-                if return_location == self.regs[PC_REG] {
-                    break;
-                }
-            }
-        }
+        self.shadow_registers();
+        self.flush_pipeline();
     }
     fn software_exception(&mut self) {
         self.shadow_registers();
@@ -488,8 +500,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 }
 
 impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
-//impl<M: Mem32<Addr = u32>> ARMv4Decode<M> for ARM7TDMI<M> {}
-//impl<M: Mem32<Addr = u32>> Thumbv4Decode<M> for ARM7TDMI<M> {}
 
 impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
     fn inspect_state(&mut self) -> CPUState {

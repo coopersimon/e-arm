@@ -110,10 +110,14 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Call a subroutine from JIT.
     /// 
     /// This should ONLY be called from inside JIT compiled code.
-    fn call_sub_from_jit(&mut self, dest: u32);
+    fn jit_call_subroutine(&mut self, dest: u32);
 
     /// Clock and handle interrupts.
     fn clock(&mut self, cycles: usize);
+    /// Clock and handle interrupts from JIT.
+    /// 
+    /// This should ONLY be called from inside JIT compiled code.
+    fn jit_clock(&mut self, cycles: usize);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;

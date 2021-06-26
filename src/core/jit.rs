@@ -1,7 +1,9 @@
 // Just-in-time compilation
 
-use std::rc::Rc;
-use std::marker::PhantomData;
+use std::{
+    rc::Rc,
+    marker::PhantomData
+};
 
 /// A subroutine to execute.
 pub enum Subroutine<T> {
@@ -46,7 +48,7 @@ impl<T> JITObject<T> {
     }
 }
 
-/// When the subroutine is running this many times, JIT it.
+/// When the subroutine has been called this many times, JIT it.
 pub const RUN_THRESHOLD: usize = 2;
 
 // Compiler things:
