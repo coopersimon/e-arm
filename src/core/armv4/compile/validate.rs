@@ -85,7 +85,7 @@ impl Validator {
 
             let i_cycles = cycles + self.internal_cycles(&decoded.instr);
             let mut instruction = DecodedInstruction {
-                instruction:    decoded.clone(),
+                instruction:    decoded,
                 cycles:         i_cycles,
                 label:          None,
                 branch_to:      None,
@@ -109,11 +109,11 @@ impl Validator {
             }
 
             // Take certain actions depending on the instruction...
-            match &decoded.instr {
+            match &instruction.instruction.instr {
                 // Check the instruction is allowed:
                 ARMv4InstructionType::LDM{load_from_user: true, ..} |
                 ARMv4InstructionType::STM{load_from_user: true, ..} |
-                //ARMv4InstructionType::SWI{..} |
+                ARMv4InstructionType::SWI{..} |
                 ARMv4InstructionType::UND |
 
                 ARMv4InstructionType::MRC{..} |

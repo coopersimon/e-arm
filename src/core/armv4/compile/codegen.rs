@@ -133,23 +133,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         }
 
         if instruction.clock {
-            let clock = wrap_clock::<M, T> as i64;
-            dynasm!(self.assembler
-                ; .arch x64
-                ; mov rax, [rbp-8]
-                ; mov [rax+52], r15d
-                ; mov DWORD [rax+60], self.current_pc as i32
-                ; pushf
-                ; mov rsi, [rbp-16]
-            );
-            self.call(clock);
-            self.reset_cycles();
-            dynasm!(self.assembler
-                ; .arch x64
-                ; popf
-                ; mov rax, [rbp-8]
-                ; mov r15d, [rax+52]
-            );
+            self.call_clock();
         }
 
         // Handle internal branch.
@@ -551,11 +535,43 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
         );
     }
 
-    /// Generate code to reset cycle count after clocking.
-    fn reset_cycles(&mut self) {
+    /// Call clock, writing back stack pointer and PC incase an interrupt needs to be handled.
+    /// Resets the cycle count afterwards.
+    fn call_clock(&mut self) {
+        let clock = wrap_clock::<M, T> as i64;
         dynasm!(self.assembler
             ; .arch x64
+
+            ; pushf
+
+            // Write back registers
+            ; mov rbx, [rbp-8]
+            ; mov [rbx+52], r15d
+            ; mov DWORD [rbx+60], self.current_pc as i32
+
+            ; push rdi
+            ; push r8
+            ; push r9
+            ; push r10
+            ; push r11
+
+            ; mov rax, QWORD clock
+            ; mov rsi, QWORD [rbp-16]
+            ; call rax
+
+            ; pop r11
+            ; pop r10
+            ; pop r9
+            ; pop r8
+            ; pop rdi
+
+            // Reload registers
+            ; mov r15d, [rbx+52]
+
+            // Reset cycles to zero
             ; mov QWORD [rbp-16], 0
+
+            ; popf
         );
     }
 }

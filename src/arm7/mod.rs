@@ -48,7 +48,7 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     abt_spsr: SPSR,
     svc_spsr: SPSR,
 
-    mem:        M,
+    mem:        Box<M>,
     coproc:     Box<[Option<CoprocImpl>]>,
     swi_hook:   Option<SwiHook<M>>,
     
@@ -57,10 +57,11 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     fetch_type:    MemCycleType,
 
     jit_cache:      HashMap<u32, Subroutine<Self>>,
+    can_compile:    bool,
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
-    pub fn new(mem: M, coproc: std::collections::HashMap<usize, CoprocImpl>, swi_hook: Option<SwiHook<M>>) -> Self {
+    pub fn new(mem: Box<M>, coproc: std::collections::HashMap<usize, CoprocImpl>, swi_hook: Option<SwiHook<M>>) -> Self {
         Self {
             regs: [0; 16],
             fiq_regs: [0; 7],
@@ -85,6 +86,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             fetch_type:    MemCycleType::N,
 
             jit_cache:      HashMap::new(),
+            can_compile:    true,
         }
     }
 
@@ -200,18 +202,21 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
 
     #[inline]
     fn jit_lookup(&mut self, target: u32) -> Option<Rc<JITObject<Self>>> {
-        match self.jit_cache.get(&target).cloned() {
+        let subroutine = self.jit_cache.get(&target).cloned();
+        match subroutine {
             None => {
                 self.jit_cache.insert(target, Subroutine::Run(1));
                 None
             },
-            Some(Subroutine::Run(RUN_THRESHOLD)) => {
+            Some(Subroutine::Run(RUN_THRESHOLD)) => if self.can_compile {
                 let jit_routine = self.jit_compile_subroutine(target);
                 self.jit_cache.insert(target, jit_routine.clone());
                 match jit_routine {
                     Subroutine::Compiled(s) => Some(s),
                     _ => None,
                 }
+            } else {
+                None
             },
             Some(Subroutine::Run(n)) => {
                 self.jit_cache.insert(target, Subroutine::Run(n + 1));
@@ -309,6 +314,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             },
             Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) {
                 self.interrupt();
+                self.can_compile = false;
                 let return_location = self.regs[LINK_REG] - I_SIZE;
                 loop {
                     self.step();
@@ -316,6 +322,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
                         break;
                     }
                 }
+                self.can_compile = true;
             },
             None => {}
         }

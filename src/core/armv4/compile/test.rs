@@ -53,12 +53,12 @@ impl TestMemBuilder {
         self
     }
 
-    fn build(self) -> TestMem {
-        TestMem {
+    fn build(self) -> Box<TestMem> {
+        Box::new(TestMem {
             instructions: self.instructions,
             data: self.data,
             cycles: 0
-        }
+        })
     }
 }
 
