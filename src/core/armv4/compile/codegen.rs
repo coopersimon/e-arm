@@ -1060,7 +1060,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
             ; mov [rbx+20], r13d
             ; mov [rbx+24], r14d
             ; mov [rbx+52], r15d
-            ; mov DWORD [rax+60], pc as i32
+            ; mov DWORD [rbx+60], pc as i32
 
             ; push rdi
             ; mov rax, QWORD software_exception

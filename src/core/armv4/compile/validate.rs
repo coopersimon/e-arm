@@ -113,7 +113,7 @@ impl Validator {
                 // Check the instruction is allowed:
                 ARMv4InstructionType::LDM{load_from_user: true, ..} |
                 ARMv4InstructionType::STM{load_from_user: true, ..} |
-                ARMv4InstructionType::SWI{..} |
+                //ARMv4InstructionType::SWI{..} |
                 ARMv4InstructionType::UND |
 
                 ARMv4InstructionType::MRC{..} |

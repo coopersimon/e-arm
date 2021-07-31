@@ -8,7 +8,7 @@ use crate::{
 macro_rules! run_test {
     ( $mem:expr, $routine:expr, $([ $reg:expr, $start:expr, $end:expr ]),* ) => {
         {   // Test interpreter
-            let mut cpu = ARM7TDMI::new($mem.clone(), HashMap::new(), None);
+            let mut cpu = ARM7TDMI::new($mem.clone()).build();
             $(
                 cpu.write_reg($reg, $start);
             )*
@@ -23,7 +23,7 @@ macro_rules! run_test {
             println!("sim cycles: {}", cpu.ref_mem().cycles);
         }
         {   // Test JIT
-            let mut cpu = ARM7TDMI::new($mem.clone(), HashMap::new(), None);
+            let mut cpu = ARM7TDMI::new($mem.clone()).enable_jit_in_ranges(vec![0..0xFFFF_FFFF]).build();
             $(
                 cpu.write_reg($reg, $start);
             )*
@@ -932,7 +932,7 @@ fn test_load_word_reg_offset() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(1, 0x1000_0000);
                 cpu.write_reg(3, 0x1000_0000);
                 cpu.write_reg(5, 0x1000_0000);
@@ -972,7 +972,7 @@ fn test_store_word_imm_offset() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(0, 0x1234_5678);
                 cpu.write_reg(1, 0x1000_0000);
                 cpu.write_reg(2, 0x2345_6789);
@@ -1026,7 +1026,7 @@ fn test_load_byte() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(1, 0x1000_0002);
                 cpu.write_reg(3, 0x1000_0000);
                 cpu.write_reg(5, 0x1000_0000);
@@ -1062,7 +1062,7 @@ fn test_store_byte() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(0, 0x1234_5678);
                 cpu.write_reg(1, 0x1000_0000);
                 cpu.write_reg(2, 0x2345_6789);
@@ -1116,7 +1116,7 @@ fn test_load_halfword() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(1, 0x1000_0002);
                 cpu.write_reg(3, 0x1000_0000);
                 cpu.write_reg(5, 0x1000_0000);
@@ -1152,7 +1152,7 @@ fn test_load_signed_halfword() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(1, 0x1000_0002);
                 cpu.write_reg(3, 0x1000_0000);
                 cpu.write_reg(5, 0x1000_0000);
@@ -1188,7 +1188,7 @@ fn test_load_signed_byte() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(1, 0x1000_0002);
                 cpu.write_reg(3, 0x1000_0000);
                 cpu.write_reg(5, 0x1000_0000);
@@ -1224,7 +1224,7 @@ fn test_store_halfword() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(0, 0x1234_5678);
                 cpu.write_reg(1, 0x1000_0000);
                 cpu.write_reg(2, 0x2345_6789);
@@ -1276,7 +1276,7 @@ fn test_swp_word() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(0, 0x1234_5678);
                 cpu.write_reg(1, 0x1000_0000);
                 cpu.write_reg(2, 0x2345_6789);
@@ -1321,7 +1321,7 @@ fn test_swp_byte() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(0, 0x1234_5678);
                 cpu.write_reg(1, 0x1000_0000);
                 cpu.write_reg(2, 0x2345_6789);
@@ -1370,7 +1370,7 @@ fn test_load_multiple() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(13, 0x1000_0000);
     
                 routine.call(&mut cpu);
@@ -1411,7 +1411,7 @@ fn test_store_multiple() {
     match routine {
         Ok(routine) => {
             {
-                let mut cpu = ARM7TDMI::new(mem.clone(), HashMap::new(), None);
+                let mut cpu = ARM7TDMI::new(mem.clone()).build();
                 cpu.write_reg(1, 0xFFEE_DDCC);
                 cpu.write_reg(3, 0x8584_8382);
                 cpu.write_reg(4, 0x1234_5678);

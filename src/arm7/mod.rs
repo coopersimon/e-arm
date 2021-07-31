@@ -27,8 +27,75 @@ use crate::{
 
 use std::{
     rc::Rc,
-    collections::HashMap
+    collections::HashMap,
+    ops::Range
 };
+
+/// Builder class for the ARM7TDMI.
+/// 
+/// Call `build` to finish building.
+pub struct ARM7TDMIBuilder<M: Mem32<Addr = u32>> {
+    mem:        Box<M>,
+    coproc:     Option<HashMap<usize, CoprocImpl>>,
+    swi_hook:   Option<SwiHook<M>>,
+    enable_jit: bool,
+    jit_ranges: Vec<Range<u32>>,
+}
+
+impl<M: Mem32<Addr = u32>> ARM7TDMIBuilder<M> {
+    pub fn build(self) -> ARM7TDMI<M> {
+        let coproc_array = if let Some(coproc) = self.coproc {
+            utils::to_slice(coproc)
+        } else {
+            Box::new([])
+        };
+
+        ARM7TDMI {
+            regs: [0; 16],
+            fiq_regs: [0; 7],
+            irq_regs: [0; 2],
+            und_regs: [0; 2],
+            abt_regs: [0; 2],
+            svc_regs: [0; 2],
+
+            cpsr: CPSR::I | CPSR::F | CPSR::SVC,
+            fiq_spsr: Default::default(),
+            irq_spsr: Default::default(),
+            und_spsr: Default::default(),
+            abt_spsr: Default::default(),
+            svc_spsr: Default::default(),
+
+            mem:        self.mem,
+            coproc:     coproc_array,
+            swi_hook:   self.swi_hook,
+
+            fetched_instr: None,
+            decoded_instr: None,
+            fetch_type:    MemCycleType::N,
+
+            enable_jit:     self.enable_jit,
+            jit_ranges:     self.jit_ranges,
+            jit_cache:      HashMap::new(),
+            can_compile:    true,
+        }
+    }
+
+    pub fn add_coprocs(mut self, coproc: HashMap<usize, CoprocImpl>) -> Self {
+        self.coproc = Some(coproc);
+        self
+    }
+
+    pub fn set_swi_hook(mut self, swi_hook: SwiHook<M>) -> Self {
+        self.swi_hook = Some(swi_hook);
+        self
+    }
+
+    pub fn enable_jit_in_ranges(mut self, ranges: Vec<Range<u32>>) -> Self {
+        self.enable_jit = true;
+        self.jit_ranges = ranges;
+        self
+    }
+}
 
 /// ARM7TDMI processor.
 /// 
@@ -56,38 +123,26 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     decoded_instr: Option<u32>,
     fetch_type:    MemCycleType,
 
+    enable_jit:     bool,
+    jit_ranges:     Vec<Range<u32>>,
     jit_cache:      HashMap<u32, Subroutine<Self>>,
     can_compile:    bool,
 }
 
 impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
-    pub fn new(mem: Box<M>, coproc: std::collections::HashMap<usize, CoprocImpl>, swi_hook: Option<SwiHook<M>>) -> Self {
-        Self {
-            regs: [0; 16],
-            fiq_regs: [0; 7],
-            irq_regs: [0; 2],
-            und_regs: [0; 2],
-            abt_regs: [0; 2],
-            svc_regs: [0; 2],
-
-            cpsr: CPSR::I | CPSR::F | CPSR::SVC,
-            fiq_spsr: Default::default(),
-            irq_spsr: Default::default(),
-            und_spsr: Default::default(),
-            abt_spsr: Default::default(),
-            svc_spsr: Default::default(),
-
+    pub fn new(mem: Box<M>) -> ARM7TDMIBuilder<M> {
+        ARM7TDMIBuilder {
             mem:        mem,
-            coproc:     utils::to_slice(coproc),
-            swi_hook:   swi_hook,
-
-            fetched_instr: None,
-            decoded_instr: None,
-            fetch_type:    MemCycleType::N,
-
-            jit_cache:      HashMap::new(),
-            can_compile:    true,
+            coproc:     None,
+            swi_hook:   None,
+            enable_jit: false,
+            jit_ranges: Vec::new(),
         }
+    }
+
+    /// Enable or disable JIT compilation.
+    pub fn enable_jit(&mut self, enable: bool) {
+        self.enable_jit = enable;
     }
 
     /// Advance a single instruction through the pipeline.
@@ -181,7 +236,15 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     }
 
     fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
-        if from < 0x0800_0000 && from >= 0x4000 {
+        let compile = || {
+            for range in &self.jit_ranges {
+                if range.contains(&from) {
+                    return true;
+                }
+            }
+            false
+        };
+        if !compile() {
             return Subroutine::CannotCompile;
         }
         let mut compiler = ARMv4Compiler::new();
@@ -194,7 +257,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             Ok(s) => {
                 Subroutine::Compiled(s)
             },
-            Err(e) => {
+            Err(_e) => {
                 Subroutine::CannotCompile
             }
         }
@@ -202,28 +265,32 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
 
     #[inline]
     fn jit_lookup(&mut self, target: u32) -> Option<Rc<JITObject<Self>>> {
-        let subroutine = self.jit_cache.get(&target).cloned();
-        match subroutine {
-            None => {
-                self.jit_cache.insert(target, Subroutine::Run(1));
-                None
-            },
-            Some(Subroutine::Run(RUN_THRESHOLD)) => if self.can_compile {
-                let jit_routine = self.jit_compile_subroutine(target);
-                self.jit_cache.insert(target, jit_routine.clone());
-                match jit_routine {
-                    Subroutine::Compiled(s) => Some(s),
-                    _ => None,
-                }
-            } else {
-                None
-            },
-            Some(Subroutine::Run(n)) => {
-                self.jit_cache.insert(target, Subroutine::Run(n + 1));
-                None
-            },
-            Some(Subroutine::CannotCompile) => None,
-            Some(Subroutine::Compiled(s)) => Some(s),
+        if self.enable_jit {
+            let subroutine = self.jit_cache.get(&target).cloned();
+            match subroutine {
+                None => {
+                    self.jit_cache.insert(target, Subroutine::Run(1));
+                    None
+                },
+                Some(Subroutine::Run(RUN_THRESHOLD)) => if self.can_compile {
+                    let jit_routine = self.jit_compile_subroutine(target);
+                    self.jit_cache.insert(target, jit_routine.clone());
+                    match jit_routine {
+                        Subroutine::Compiled(s) => Some(s),
+                        _ => None,
+                    }
+                } else {
+                    None
+                },
+                Some(Subroutine::Run(n)) => {
+                    self.jit_cache.insert(target, Subroutine::Run(n + 1));
+                    None
+                },
+                Some(Subroutine::CannotCompile) => None,
+                Some(Subroutine::Compiled(s)) => Some(s),
+            }
+        } else {
+            None
         }
     }
 }
