@@ -30,7 +30,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Called when an undefined instruction is encountered.
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
-        panic!("undefined");
+        let pc = self.read_reg(PC_REG);
+        let (val, _) = self.load_word(MemCycleType::S, pc);
+        panic!("undefined: {:X} @ {:X}", val, pc);
         //self.undefined_exception();
         //0
     }
@@ -94,8 +96,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
 
     /// ROR
     /// Rotate right
-    fn ror(&mut self, val: u32, shift_amount: u32) -> u32 {
-        val.rotate_right(shift_amount)
+    fn ror(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
+        let result = val.rotate_right(shift_amount);
+        if set_carry {
+            let mut cpsr = self.read_cpsr();
+            cpsr.set(CPSR::C, test_bit(result, 31));
+            self.write_flags(cpsr);
+        }
+        result
     }
 
     /// RRX
@@ -509,7 +517,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn bl(&mut self, offset: u32) -> usize {
         let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
-        self.do_branch(current_pc.wrapping_add(offset));
+        // Call into JIT cache.
+        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset));
         0
     }
 
@@ -545,14 +554,15 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Branch and link. Second part of two instructions.
     fn tbl_hi(&mut self, offset: u32) -> usize {
         let return_addr = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
-        let dest = self.read_reg(LINK_REG).wrapping_add(offset).wrapping_sub(T_SIZE);
-        self.do_branch(dest);
+        let dest = self.read_reg(LINK_REG).wrapping_add(offset);
         self.write_reg(LINK_REG, return_addr | 1);
         // We must re-enable interrupts if they were enabled before.
         let mut cpsr = self.read_cpsr();
         cpsr.set(CPSR::I, cpsr.contains(CPSR::BLI));
         cpsr.remove(CPSR::BLI);
         self.write_cpsr(cpsr);
+        // Call into JIT cache.
+        self.call_subroutine(dest);
         0
     }
 
@@ -1098,7 +1108,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                     } else {
                         self.asr_32(set_carry, shift)
                     },
-                    ROR => self.ror(shift, shift_amount),
+                    ROR => self.ror(set_carry, shift, shift_amount),
                 }, 1)
             }
         }
@@ -1116,7 +1126,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             LSL{shift_amount, reg} => self.lsl(set_carry, self.read_reg(reg), shift_amount),
             LSR{shift_amount, reg} => self.lsr(set_carry, self.read_reg(reg), shift_amount),
             ASR{shift_amount, reg} => self.asr(set_carry, self.read_reg(reg), shift_amount),
-            ROR{shift_amount, reg} => self.ror(self.read_reg(reg), shift_amount),
+            ROR{shift_amount, reg} => self.ror(set_carry, self.read_reg(reg), shift_amount),
             LSR32{reg} => self.lsr_32(set_carry, self.read_reg(reg)),
             ASR32{reg} => self.asr_32(set_carry, self.read_reg(reg)),
             RRX{reg} => self.rrx(set_carry, self.read_reg(reg)),

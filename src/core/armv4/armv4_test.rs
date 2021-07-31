@@ -89,6 +89,10 @@ impl Mem32 for TestMem {
         self.0[idx] = data;
         1
     }
+
+    fn clock(&mut self, _cycles: usize) -> Option<crate::ExternalException> {
+        None
+    }
 }
 
 impl ARMCore<TestMem> for TestARM4Core {
@@ -98,8 +102,23 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn write_reg(&mut self, n: usize, data: u32) {
         self.regs[n] = data;
     }
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
+        &mut self.regs
+    }
     fn do_branch(&mut self, dest: u32) {
         self.regs[15] = dest;
+    }
+    fn call_subroutine(&mut self, _dest: u32) {
+        // TODO
+    }
+    fn jit_call_subroutine(&mut self, dest: u32) {
+        self.call_subroutine(dest);
+    }
+    fn clock(&mut self, _cycles: usize) {
+
+    }
+    fn jit_clock(&mut self, cycles: usize) {
+        self.clock(cycles);
     }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
@@ -160,12 +179,12 @@ impl ARMCore<TestMem> for TestARM4Core {
         &mut self.memory
     }
 
-    fn ref_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>> {
+    fn ref_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut CoprocImpl> {
         None
     }
 }
 
-impl ARMv4Decode<TestMem> for TestARM4Core {}
+//impl ARMv4Decode<TestMem> for TestARM4Core {}
 impl ARMv4<TestMem> for TestARM4Core {}
 
 // Use to setup in state
@@ -186,7 +205,7 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        let instr = cpu.decode_instruction(self.instr);
+        let instr = decode_arm_v4(self.instr);
         let cycles = instr.execute(&mut cpu);
 
         for (i, val) in out.regs.iter().enumerate() {

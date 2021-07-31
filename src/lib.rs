@@ -6,7 +6,7 @@ mod coproc;
 mod debugger;
 
 pub use crate::core::{
-    ARMCore, ARMv4, ARMv4Decode, Thumbv4Decode, ARMv4Instruction, CPSR, SwiHook
+    ARMCore, ARMv4, ARMv4Instruction, CPSR, SwiHook, decode_arm_v4, decode_thumb_v4
 };
 
 pub use crate::memory::{
@@ -14,7 +14,7 @@ pub use crate::memory::{
 };
 
 pub use crate::coproc::{
-    Coprocessor
+    Coprocessor, CoprocImpl
 };
 
 pub use crate::arm7::{
@@ -22,3 +22,13 @@ pub use crate::arm7::{
 };
 
 pub use crate::debugger::*;
+
+/// Exceptions that come from external lines.
+pub enum ExternalException {
+    /// Reset
+    RST,
+    /// Fast Interrupt
+    FIQ,
+    /// Interrupt
+    IRQ
+}

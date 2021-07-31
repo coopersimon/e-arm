@@ -1,6 +1,6 @@
 [package]
 name = "arm"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Simon Cooper <simon.d.cooper@hotmail.co.uk>"]
 edition = "2018"
 
@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 bitflags = "1.1.0"
 num-traits = "0.2"
+dynasmrt = "1.0"

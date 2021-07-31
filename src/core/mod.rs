@@ -1,17 +1,20 @@
 /// Core traits and types for ARM processors (data access).
 
 mod armv4;
+mod jit;
 
 use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
-use crate::coproc::Coprocessor;
+use crate::coproc::CoprocImpl;
 use crate::memory::{Mem32, MemCycleType};
 
+pub use jit::*;
+
 pub use armv4::instructions::ARMv4Instruction;
-pub use armv4::decode::ARMv4Decode;
-pub use armv4::decodethumb::Thumbv4Decode;
+pub use armv4::decode::*;
 pub use armv4::execute::ARMv4;
+pub use armv4::compile::ARMv4Compiler;
 
 pub mod constants {
     pub const SP_REG: usize = 13;
@@ -84,13 +87,37 @@ impl CPSR {
 pub type SPSR = CPSR;
 
 pub trait ARMCore<M: Mem32<Addr = u32>> {
+    /// Read a single general purpose register.
+    /// 
+    /// Can only access registers available in the current mode.
     fn read_reg(&self, n: usize) -> u32;
+    /// Write a single general purpose register.
+    /// 
+    /// Can only access registers available in the current mode.
     fn write_reg(&mut self, n: usize, data: u32);
+    /// Get a reference to all of the registers.
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32];
+
     /// Directly modify the PC.
     /// 
     /// Keep in mind the PC will be incremented after the execution completes,
     /// so the destination must be offset by the branch instruction size.
     fn do_branch(&mut self, dest: u32);
+    /// Call a subroutine.
+    /// 
+    /// This is the entry point for JIT compiled code.
+    fn call_subroutine(&mut self, dest: u32);
+    /// Call a subroutine from JIT.
+    /// 
+    /// This should ONLY be called from inside JIT compiled code.
+    fn jit_call_subroutine(&mut self, dest: u32);
+
+    /// Clock and handle interrupts.
+    fn clock(&mut self, cycles: usize);
+    /// Clock and handle interrupts from JIT.
+    /// 
+    /// This should ONLY be called from inside JIT compiled code.
+    fn jit_clock(&mut self, cycles: usize);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;
@@ -126,9 +153,12 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Usually called from store instructions.
     fn next_fetch_non_seq(&mut self);
 
+    /// Reference the memory bus immutably.
     fn ref_mem<'a>(&'a self) -> &'a M;
+    /// Reference the memory bus mutably.
     fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
-    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut Box<dyn Coprocessor>>;
+    /// Reference a coprocessor mutably.
+    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl>;
 
     // Memory
     fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {
@@ -171,6 +201,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 pub type SwiHook<M> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
 
 /// ARM condition codes.
+#[derive(Clone, Copy)]
 pub enum ARMCondition {
     EQ, // Z set
     NE, // Z clear
