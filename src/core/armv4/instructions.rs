@@ -239,11 +239,11 @@ impl fmt::Display for ARMv4Instruction {
             SWI{comment} => write!(f, "SWI{} {:X}", self.cond, comment),
             UND => write!(f, "UND"),
 
-            MRC{coproc, coproc_reg, arm_reg, op_reg, op, info} => write!(f, "MRC{} {},<{}>,{},{},{},<{}>", self.cond, coproc, op, arm_reg, coproc_reg, op_reg, info),
-            MCR{coproc, coproc_reg, arm_reg, op_reg, op, info} => write!(f, "MCR{} {},<{}>,{},{},{},<{}>", self.cond, coproc, op, arm_reg, coproc_reg, op_reg, info),
-            CDP{op, reg_n, reg_d, info, reg_m, coproc} => write!(f, "CDP{} {},<{}>,{},{},{},<{}>", self.cond, coproc, op, reg_d, reg_n, reg_m, info),
-            LDC{coproc, coproc_reg, transfer_len, transfer_params, offset} => write!(f, "LDC{}{},{},{},{}", self.cond, if *transfer_len {"L"} else {""}, coproc, coproc_reg, transfer_params.si(offset)),
-            STC{coproc, coproc_reg, transfer_len, transfer_params, offset} => write!(f, "STC{}{},{},{},{}", self.cond, if *transfer_len {"L"} else {""}, coproc, coproc_reg, transfer_params.si(offset)),
+            MRC{coproc, coproc_reg, arm_reg, op_reg, op, info} => write!(f, "MRC{} {},<{}>,R{},C{},C{},<{}>", self.cond, coproc, op, arm_reg, coproc_reg, op_reg, info),
+            MCR{coproc, coproc_reg, arm_reg, op_reg, op, info} => write!(f, "MCR{} {},<{}>,R{},C{},C{},<{}>", self.cond, coproc, op, arm_reg, coproc_reg, op_reg, info),
+            CDP{op, reg_n, reg_d, info, reg_m, coproc} => write!(f, "CDP{} {},<{}>,R{},R{},R{},<{}>", self.cond, coproc, op, reg_d, reg_n, reg_m, info),
+            LDC{coproc, coproc_reg, transfer_len, transfer_params, offset} => write!(f, "LDC{}{},{},C{},{}", self.cond, if *transfer_len {"L"} else {""}, coproc, coproc_reg, transfer_params.si(offset)),
+            STC{coproc, coproc_reg, transfer_len, transfer_params, offset} => write!(f, "STC{}{},{},C{},{}", self.cond, if *transfer_len {"L"} else {""}, coproc, coproc_reg, transfer_params.si(offset)),
 
             B{offset} => write!(f, "B{} #{:X}", self.cond, offset),
             TB{offset} => write!(f, "B{} #{:X}", self.cond, offset),
@@ -351,7 +351,7 @@ impl TransferParams {
         }
     }
 
-    fn so(&self, offset: &OpData) -> String {
+    pub fn so(&self, offset: &OpData) -> String {
         let is_offset = match offset {
             OpData::Immediate(0) => false,
             _ => true,
@@ -367,7 +367,7 @@ impl TransferParams {
         }
     }
 
-    fn si(&self, offset: &u32) -> String {
+    pub fn si(&self, offset: &u32) -> String {
         if *offset != 0 {
             if self.pre_index {
                 format!("[R{},{}{}]{}", self.base_reg, if self.inc {""} else {"-"}, *offset, if self.writeback {"!"} else {""})

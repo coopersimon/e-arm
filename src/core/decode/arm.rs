@@ -409,7 +409,7 @@ fn decode_data_proc_ext_00(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
             ARMv5InstructionType::QADD{rd, rm, rn}
         } else if test_bit(i, 7) && !test_bit(i, 4) {
             let rs = ((i >> 8) & 0xF) as usize;
-            ARMv5InstructionType::SMLAxy{rd: rn, rs, rm, rn: rd}
+            ARMv5InstructionType::SMLAxy{rd: rn, rs, rm, rn: rd, y: test_bit(i, 6), x: test_bit(i, 5)}
         } else {
             ARMv4InstructionType::UND.into()
         }
@@ -426,9 +426,9 @@ fn decode_data_proc_ext_01(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
         } else if test_bit(i, 7) && !test_bit(i, 4) {
             let rs = ((i >> 8) & 0xF) as usize;
             if test_bit(i, 5) {
-                ARMv5InstructionType::SMULWy{rd: rn, rs, rm}
+                ARMv5InstructionType::SMULWy{rd: rn, rs, rm, y: test_bit(i, 6)}
             } else {
-                ARMv5InstructionType::SMLAWy{rd: rn, rs, rm, rn: rd}
+                ARMv5InstructionType::SMLAWy{rd: rn, rs, rm, rn: rd, y: test_bit(i, 6)}
             }
         } else {
             ARMv4InstructionType::UND.into()
@@ -449,7 +449,7 @@ fn decode_data_proc_ext_10(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
             ARMv5InstructionType::QDADD{rd, rm, rn}
         } else if test_bit(i, 7) && !test_bit(i, 4) {
             let rs = ((i >> 8) & 0xF) as usize;
-            ARMv5InstructionType::SMLALxy{rd_hi: rn, rd_lo: rd, rs, rm}
+            ARMv5InstructionType::SMLALxy{rd_hi: rn, rd_lo: rd, rs, rm, y: test_bit(i, 6), x: test_bit(i, 5)}
         } else {
             ARMv4InstructionType::UND.into()
         }
@@ -467,7 +467,7 @@ fn decode_data_proc_ext_11(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
             ARMv5InstructionType::CLZ{rd, rm}
         } else if test_bit(i, 7) && !test_bit(i, 4) {
             let rs = ((i >> 8) & 0xF) as usize;
-            ARMv5InstructionType::SMULxy{rd: rn, rs, rm}
+            ARMv5InstructionType::SMULxy{rd: rn, rs, rm, y: test_bit(i, 6), x: test_bit(i, 5)}
         } else {
             ARMv4InstructionType::UND.into()
         }
