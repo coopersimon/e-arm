@@ -83,8 +83,35 @@ impl ARMv5InstructionType {
         use ARMv5InstructionType::*;
         match self {
             ARMv4(i) => i.execute(core),
-            _ => 0
-
+            // Co-processor
+            MRC2{coproc, coproc_reg, arm_reg, op_reg, op, info} => core.mrc2(coproc, coproc_reg, arm_reg, op_reg, op, info),
+            MCR2{coproc, coproc_reg, arm_reg, op_reg, op, info} => core.mcr2(coproc, coproc_reg, arm_reg, op_reg, op, info),
+            CDP2{op, reg_n, reg_d, info, reg_m, coproc} => core.cdp2(op, reg_n, reg_d, info, reg_m, coproc),
+            LDC2{coproc, coproc_reg, transfer_len, transfer_params, offset} => core.ldc2(coproc, transfer_len, transfer_params, offset, coproc_reg),
+            STC2{coproc, coproc_reg, transfer_len, transfer_params, offset} => core.stc2(coproc, transfer_len, transfer_params, offset, coproc_reg),
+            MRRC{coproc, arm_reg_n, arm_reg_d, op_reg, op} => core.mrrc(coproc, arm_reg_n, arm_reg_d, op_reg, op),
+            MCRR{coproc, arm_reg_n, arm_reg_d, op_reg, op} => core.mcrr(coproc, arm_reg_n, arm_reg_d, op_reg, op),
+            // Branch
+            BLXI{offset} => core.blxi(offset),
+            BLXR{reg} => core.blxr(reg),
+            // Transfer
+            PLD{transfer_params, offset} => core.pld(transfer_params, offset),
+            LDRD{transfer_params, data_reg, offset} => core.ldrd(transfer_params, data_reg, offset),
+            STRD{transfer_params, data_reg, offset} => core.strd(transfer_params, data_reg, offset),
+            // Q ALU
+            QADD{rd, rm, rn} => core.qadd(rd, rm, rn),
+            QSUB{rd, rm, rn} => core.qsub(rd, rm, rn),
+            QDADD{rd, rm, rn} => core.qdadd(rd, rm, rn),
+            QDSUB{rd, rm, rn} => core.qdsub(rd, rm, rn),
+            // Signed halfword multiply
+            SMULxy{rd, rm, rs, y, x} => core.smulxy(rd, rm, rs, y, x),
+            SMULWy{rd, rm, rs, y} => core.smulwy(rd, rm, rs, y),
+            SMLAxy{rd, rm, rs, rn, y, x} => core.smlaxy(rd, rm, rs, rn, y, x),
+            SMLAWy{rd, rm, rs, rn, y} => core.smlawy(rd, rm, rs, rn, y),
+            SMLALxy{rd_hi, rd_lo, rm, rs, y, x} => core.smlalxy(rd_hi, rd_lo, rm, rs, y, x),
+            // Other special instructions
+            BKPT{comment} => core.bkpt(comment),
+            CLZ{rd, rm} => core.clz(rd, rm),
         }
     }
 }
