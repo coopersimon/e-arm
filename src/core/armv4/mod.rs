@@ -3,7 +3,6 @@
 #[allow(dead_code)]
 mod armv4_test;
 pub mod instructions;
-pub mod decode;
 pub mod execute;
 pub mod compile;
 

@@ -5,14 +5,11 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use crate::{
     Mem32, MemCycleType,
-    core::{ARMCore, CompilerError, ReturnLocation, constants}
+    core::{ARMCore, CompilerError, ReturnLocation, constants, decode_arm_v4, decode_thumb_v4}
 };
 use super::{
     DecodedInstruction,
-    super::{
-        instructions::{ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
-        decode::*,
-    }
+    super::instructions::{ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
 };
 
 /// Minimum length of subroutine in instructions.

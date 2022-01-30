@@ -6,7 +6,7 @@ mod coproc;
 mod debugger;
 
 pub use crate::core::{
-    ARMCore, ARMv4, ARMv4Instruction, CPSR, SwiHook, decode_arm_v4, decode_thumb_v4
+    ARMCore, ARMv4, ARMv4Instruction, CPSR, SwiHook, decode_arm_v4, decode_thumb_v4, decode_arm_v5, decode_thumb_v5
 };
 
 pub use crate::memory::{

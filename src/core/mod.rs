@@ -1,6 +1,8 @@
 /// Core traits and types for ARM processors (data access).
 
 mod armv4;
+mod armv5;
+mod decode;
 mod jit;
 
 use std::fmt;
@@ -11,10 +13,18 @@ use crate::memory::{Mem32, MemCycleType};
 
 pub use jit::*;
 
-pub use armv4::instructions::ARMv4Instruction;
-pub use armv4::decode::*;
-pub use armv4::execute::ARMv4;
-pub use armv4::compile::ARMv4Compiler;
+pub use decode::*;
+
+pub use armv4::{
+    instructions::ARMv4Instruction,
+    execute::ARMv4,
+    compile::ARMv4Compiler
+};
+
+pub use armv5::{
+    instructions::ARMv5Instruction,
+    execute::ARMv5
+};
 
 pub mod constants {
     pub const SP_REG: usize = 13;
@@ -201,7 +211,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 pub type SwiHook<M> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
 
 /// ARM condition codes.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum ARMCondition {
     EQ, // Z set
     NE, // Z clear
@@ -218,6 +228,7 @@ pub enum ARMCondition {
     GT, // Z clear and (N xnor V)
     LE, // Z set or (N xor V)
     AL, // Always
+    NV, // Never (reserved)
 }
 
 impl fmt::Display for ARMCondition {
@@ -238,7 +249,7 @@ impl fmt::Display for ARMCondition {
             LT => write!(f, "LT"),
             GT => write!(f, "GT"),
             LE => write!(f, "LE"),
-            AL => write!(f, ""),
+            AL | NV => write!(f, ""),
         }
     }
 }
@@ -279,7 +290,7 @@ impl ARMCondition {
                 let cpsr = core.read_cpsr();
                 cpsr.contains(CPSR::Z) || (cpsr.contains(CPSR::N) != cpsr.contains(CPSR::V))
             },
-            AL => true,
+            AL | NV => true,
         }
     }
 }

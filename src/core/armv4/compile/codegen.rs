@@ -348,7 +348,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                         ; .arch x64
                         ; jg =>skip_label
                     ),
-                    ARMCondition::AL => unreachable!(),
+                    ARMCondition::AL | ARMCondition::NV => unreachable!(),
                 }
                 Some(skip_label)
             }
@@ -1696,7 +1696,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
                 ; .arch x64
                 ; jle =>label
             ),
-            ARMCondition::AL => dynasm!(self.assembler
+            ARMCondition::AL | ARMCondition::NV => dynasm!(self.assembler
                 ; .arch x64
                 ; jmp =>label
             ),

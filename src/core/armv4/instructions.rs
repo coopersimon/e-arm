@@ -2,6 +2,9 @@
 
 use crate::{
     core::{ARMCondition, ARMv4},
+    core::armv5::instructions::{
+        ARMv5Instruction, ARMv5InstructionType
+    },
     memory::Mem32
 };
 use std::fmt;
@@ -13,12 +16,6 @@ pub struct ARMv4Instruction {
 }
 
 impl ARMv4Instruction {
-    pub fn new(cond: ARMCondition, instr: ARMv4InstructionType) -> Self {
-        Self {
-            cond, instr
-        }
-    }
-
     /// Execute the instruction on the core provided.
     /// 
     /// Returns the number of cycles needed to execute it.
@@ -29,6 +26,15 @@ impl ARMv4Instruction {
             self.instr.execute(core)
         } else {
             0
+        }
+    }
+}
+
+impl From<ARMv5Instruction> for ARMv4Instruction {
+    fn from(i: ARMv5Instruction) -> Self {
+        match i.instr {
+            ARMv5InstructionType::ARMv4(instr) => ARMv4Instruction{cond: i.cond, instr},
+            _ => ARMv4Instruction{cond: i.cond, instr: ARMv4InstructionType::UND}
         }
     }
 }
@@ -105,7 +111,7 @@ impl ARMv4InstructionType {
     /// Returns the number of cycles needed to execute it.
     /// This includes any internal (I) cycles and non-seq loads and stores (N).
     /// It does _not_ include the initial fetch cycles (S) or any pipeline flush stall cycles.
-    fn execute<M: Mem32<Addr = u32>, A: ARMv4<M>>(self, core: &mut A) -> usize {
+    pub fn execute<M: Mem32<Addr = u32>, A: ARMv4<M>>(self, core: &mut A) -> usize {
         use ARMv4InstructionType::*;
         match self {
             SWI{comment} => core.swi(comment),
