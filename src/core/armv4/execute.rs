@@ -7,7 +7,7 @@ use super::{
 use crate::{
     common::{
         u32::*,
-        u64, lo_64, hi_64, make_64
+        u64
     },
     core::{ARMCore, CPSR},
     memory::{Mem32, MemCycleType}
@@ -418,8 +418,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = op2 as u64;
         let result = op1.wrapping_mul(op2_64);
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -437,10 +437,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = op2 as u64;
         let mul_result = op1.wrapping_mul(op2_64);
-        let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
+        let acc_op = u64::make(self.read_reg(rd_hi), self.read_reg(rd_lo));
         let result = mul_result.wrapping_add(acc_op);
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -458,8 +458,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = (op2 as i32) as i64;
         let result = op1.wrapping_mul(op2_64) as u64;
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -477,10 +477,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = (op2 as i32) as i64;
         let mul_result = op1.wrapping_mul(op2_64) as u64;
-        let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
+        let acc_op = u64::make(self.read_reg(rd_hi), self.read_reg(rd_lo));
         let result = mul_result.wrapping_add(acc_op);
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
