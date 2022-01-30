@@ -24,6 +24,13 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> {
         0
     }
 
+    fn clz(&mut self, rd: usize, rm: usize) -> usize {
+        let op = self.read_reg(rm);
+        let result = op.leading_zeros();
+        self.write_reg(rd, result);
+        0
+    }
+
     // Saturating arithmetic
 
     /// QADD
