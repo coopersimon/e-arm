@@ -3,7 +3,7 @@ use crate::{
     common::{
         u32, u64
     },
-    core::{ARMCore, CPSR, ARMv4},
+    core::{ARMCore, CPSR, ARMv4, constants::*},
     memory::{Mem32, MemCycleType}
 };
 
@@ -185,5 +185,40 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> {
         self.write_reg(rd_lo, u64::lo(result));
         self.write_reg(rd_hi, u64::hi(result));
         1
+    }
+
+    // Branch
+
+    /// BLX
+    /// Branch, link, and exchange - using immediate value
+    fn blxi(&mut self, offset: u32) -> usize {
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
+        self.write_reg(LINK_REG, current_pc);
+
+        let mut cpsr = self.read_cpsr();
+        cpsr.insert(CPSR::T);
+        self.write_flags(cpsr);
+
+        // Call into JIT cache.
+        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset));
+        0
+    }
+
+    /// BLX
+    /// Branch, link, and exchange - using register value
+    fn blxr(&mut self, reg: usize) -> usize {
+        let reg_val = self.read_reg(reg);
+        let mut cpsr = self.read_cpsr();
+        let src_i_size = cpsr.instr_size();
+        cpsr.set(CPSR::T, u32::test_bit(reg_val, 0));
+        self.write_flags(cpsr);
+
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(src_i_size);
+        self.write_reg(LINK_REG, current_pc);
+
+        let dest = reg_val & 0xFFFFFFFE;
+        // Call into JIT cache.
+        self.call_subroutine(dest.wrapping_sub(src_i_size));
+        0
     }
 }

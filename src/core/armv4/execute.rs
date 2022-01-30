@@ -1,6 +1,5 @@
 
 use super::{
-    super::constants::*,
     instructions::*,
     mul_cycles
 };
@@ -9,7 +8,7 @@ use crate::{
         u32::*,
         u64
     },
-    core::{ARMCore, CPSR},
+    core::{ARMCore, CPSR, constants::*},
     memory::{Mem32, MemCycleType}
 };
 
