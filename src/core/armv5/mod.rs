@@ -1,5 +1,7 @@
 /// ARMv5 Instruction Set
 
+#[allow(dead_code)]
+mod armv5_test;
 pub mod instructions;
 pub mod coproc;
 pub mod execute;

@@ -11,7 +11,7 @@ use crate::{
     core::{ARMCondition, ARMv4Instruction, ARMv5Instruction},
 };
 
-use arm::decode_instruction;
+use self::arm::decode_instruction;
 use thumb::decode_thumb;
 
 pub fn decode_arm_v4(i: u32) -> ARMv4Instruction {

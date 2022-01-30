@@ -5,6 +5,9 @@ mod armv5;
 mod decode;
 mod jit;
 
+#[allow(dead_code)]
+mod test_utils;
+
 use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};

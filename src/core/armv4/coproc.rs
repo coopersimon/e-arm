@@ -1,4 +1,5 @@
 /// Coprocessor interface for ARM processor.
+
 pub type CoprocV4Impl = Box<dyn CoprocV4 + Send>;
 
 /// ARMv4 Coprocessor interface.
