@@ -982,7 +982,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// MRC
     /// Move from coprocessor to ARM
     fn mrc(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
-        if let Some(c) = self.ref_coproc(coproc) {
+        if let Some(c) = self.mut_coproc(coproc) {
             let (data, cycles) = c.mrc(coproc_reg, op_reg, op, info);
             self.write_reg(arm_reg, data);
             cycles
@@ -995,7 +995,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Move from ARM to coprocessor
     fn mcr(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
         let data = self.read_reg(arm_reg);
-        if let Some(c) = self.ref_coproc(coproc) {
+        if let Some(c) = self.mut_coproc(coproc) {
             c.mcr(coproc_reg, op_reg, data, op, info)
         } else {
             self.undefined()
@@ -1018,7 +1018,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let cycles = if let Some(c) = self.ref_coproc(coproc) {
+        let cycles = if let Some(c) = self.mut_coproc(coproc) {
             let (data, cop_cycles) = c.stc(transfer_len, coproc_reg);
             let mem_cycles = self.store_word(MemCycleType::N, transfer_addr, data);
             self.next_fetch_non_seq();
@@ -1052,7 +1052,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         };
 
         let (data, mem_cycles) = self.load_word(MemCycleType::N, transfer_addr);
-        let cycles = if let Some(c) = self.ref_coproc(coproc) {
+        let cycles = if let Some(c) = self.mut_coproc(coproc) {
             c.ldc(transfer_len, coproc_reg, data) + mem_cycles
         } else {
             self.undefined()
@@ -1069,7 +1069,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// CDP
     /// Coprocessor data operation
     fn cdp(&mut self, op: u32, reg_n: usize, reg_d: usize, info: u32, reg_m: usize, coproc: usize) -> usize {
-        if let Some(c) = self.ref_coproc(coproc) {
+        if let Some(c) = self.mut_coproc(coproc) {
             c.cdp(op, reg_n, reg_d, info, reg_m)
         } else {
             self.undefined()

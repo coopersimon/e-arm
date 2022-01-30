@@ -3,6 +3,7 @@
 #[allow(dead_code)]
 mod armv4_test;
 pub mod instructions;
+pub mod coproc;
 pub mod execute;
 pub mod compile;
 

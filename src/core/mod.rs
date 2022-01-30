@@ -8,7 +8,6 @@ mod jit;
 use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
-use crate::coproc::CoprocImpl;
 use crate::memory::{Mem32, MemCycleType};
 
 pub use jit::*;
@@ -18,12 +17,14 @@ pub use decode::*;
 pub use armv4::{
     instructions::ARMv4Instruction,
     execute::ARMv4,
-    compile::ARMv4Compiler
+    compile::ARMv4Compiler,
+    coproc::*
 };
 
 pub use armv5::{
     instructions::ARMv5Instruction,
-    execute::ARMv5
+    execute::ARMv5,
+    coproc::*
 };
 
 pub mod constants {
@@ -169,7 +170,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Reference the memory bus mutably.
     fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
     /// Reference a coprocessor mutably.
-    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl>;
+    fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV4Impl>;
 
     // Memory
     fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {

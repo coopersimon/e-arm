@@ -11,6 +11,7 @@ use crate::core::{
     ARMCore,
     ARMv4,
     ARMv4Compiler,
+    CoprocV4Impl,
     decode_arm_v4,
     decode_thumb_v4,
     Subroutine, JITObject, RUN_THRESHOLD
@@ -19,7 +20,6 @@ use crate::common::u32;
 use crate::memory::{
     Mem32, MemCycleType
 };
-use crate::coproc::CoprocImpl;
 use crate::{
     ExternalException,
     Debugger, CPUState
@@ -36,7 +36,7 @@ use std::{
 /// Call `build` to finish building.
 pub struct ARM7TDMIBuilder<M: Mem32<Addr = u32>> {
     mem:        Box<M>,
-    coproc:     Option<HashMap<usize, CoprocImpl>>,
+    coproc:     Option<HashMap<usize, CoprocV4Impl>>,
     swi_hook:   Option<SwiHook<M>>,
     enable_jit: bool,
     jit_ranges: Vec<Range<u32>>,
@@ -80,7 +80,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMIBuilder<M> {
         }
     }
 
-    pub fn add_coprocs(mut self, coproc: HashMap<usize, CoprocImpl>) -> Self {
+    pub fn add_coprocs(mut self, coproc: HashMap<usize, CoprocV4Impl>) -> Self {
         self.coproc = Some(coproc);
         self
     }
@@ -116,7 +116,7 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     svc_spsr: SPSR,
 
     mem:        Box<M>,
-    coproc:     Box<[Option<CoprocImpl>]>,
+    coproc:     Box<[Option<CoprocV4Impl>]>,
     swi_hook:   Option<SwiHook<M>>,
     
     fetched_instr: Option<u32>,
@@ -568,7 +568,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         &mut self.mem
     }
 
-    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl> {
+    fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV4Impl> {
         self.coproc[coproc].as_mut()
     }
 }

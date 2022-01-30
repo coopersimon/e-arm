@@ -4,18 +4,19 @@ use crate::{
         u32, u64
     },
     core::{
-        ARMCore, CPSR, ARMv4,
+        CPSR, ARMv4,
         constants::*,
         armv4::instructions::{TransferParams, ShiftOperand, OpData}
     },
     memory::{Mem32, MemCycleType}
 };
+use super::ARMCoreV5;
 
 const Q_MAX: u32 = i32::MAX as u32;
 const Q_MIN: u32 = i32::MIN as u32;
 
 /// Execution of ARMv5 instructions.
-pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> {
+pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
 
     /// BKPT
     /// Breakpoint
@@ -24,6 +25,8 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> {
         0
     }
 
+    /// CLZ
+    /// Count leading zeroes
     fn clz(&mut self, rd: usize, rm: usize) -> usize {
         let op = self.read_reg(rm);
         let result = op.leading_zeros();
@@ -301,4 +304,126 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> {
     }
 
     // Coprocessor
+
+    /// MRC2
+    /// Move from coprocessor to ARM
+    fn mrc2(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
+        if let Some(c) = self.mut_coproc_v5(coproc) {
+            let (data, cycles) = c.mrc2(coproc_reg, op_reg, op, info);
+            self.write_reg(arm_reg, data);
+            cycles
+        } else {
+            self.undefined()
+        }
+    }
+
+    /// MCR2
+    /// Move from ARM to coprocessor
+    fn mcr2(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
+        let data = self.read_reg(arm_reg);
+        if let Some(c) = self.mut_coproc_v5(coproc) {
+            c.mcr2(coproc_reg, op_reg, data, op, info)
+        } else {
+            self.undefined()
+        }
+    }
+
+    /// STC2
+    /// Store into memory from coprocessor
+    /// TODO: transfer len of more than 1?
+    fn stc2(&mut self, coproc: usize, transfer_len: bool, transfer_params: TransferParams, offset: u32, coproc_reg: usize) -> usize {
+        let base_addr = self.read_reg(transfer_params.base_reg);
+        let offset_addr = if transfer_params.inc {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let transfer_addr = if transfer_params.pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        let cycles = if let Some(c) = self.mut_coproc_v5(coproc) {
+            let (data, cop_cycles) = c.stc2(transfer_len, coproc_reg);
+            let mem_cycles = self.store_word(MemCycleType::N, transfer_addr, data);
+            self.next_fetch_non_seq();
+            cop_cycles + mem_cycles
+        } else {
+            self.undefined()
+        };
+
+        if !transfer_params.pre_index || transfer_params.writeback {
+            // Write offset address back into base register.
+            self.write_reg(transfer_params.base_reg, offset_addr);
+        }
+
+        cycles
+    }
+
+    /// LDC2
+    /// Load from memory to coprocessor
+    /// TODO: transfer len of more than 1?
+    fn ldc2(&mut self, coproc: usize, transfer_len: bool, transfer_params: TransferParams, offset: u32, coproc_reg: usize) -> usize {
+        let base_addr = self.read_reg(transfer_params.base_reg);
+        let offset_addr = if transfer_params.inc {
+            base_addr.wrapping_add(offset)  // Inc
+        } else {
+            base_addr.wrapping_sub(offset)  // Dec
+        };
+        let transfer_addr = if transfer_params.pre_index {
+            offset_addr // Pre
+        } else {
+            base_addr   // Post
+        };
+
+        let (data, mem_cycles) = self.load_word(MemCycleType::N, transfer_addr);
+        let cycles = if let Some(c) = self.mut_coproc_v5(coproc) {
+            c.ldc2(transfer_len, coproc_reg, data) + mem_cycles
+        } else {
+            self.undefined()
+        };
+
+        if !transfer_params.pre_index || transfer_params.writeback {
+            // Write offset address back into base register.
+            self.write_reg(transfer_params.base_reg, offset_addr);
+        }
+
+        cycles
+    }
+
+    /// CDP2
+    /// Coprocessor data operation
+    fn cdp2(&mut self, op: u32, reg_n: usize, reg_d: usize, info: u32, reg_m: usize, coproc: usize) -> usize {
+        if let Some(c) = self.mut_coproc_v5(coproc) {
+            c.cdp2(op, reg_n, reg_d, info, reg_m)
+        } else {
+            self.undefined()
+        }
+    }
+
+    /// MRRC
+    /// Move double from coprocessor to ARM
+    fn mrrc(&mut self, coproc: usize, arm_reg_n: usize, arm_reg_d: usize, op_reg: usize, op: u32) -> usize {
+        if let Some(c) = self.mut_coproc_v5(coproc) {
+            let (data_lo, data_hi, cycles) = c.mrrc(op_reg, op);
+            self.write_reg(arm_reg_d, data_lo);
+            self.write_reg(arm_reg_n, data_hi);
+            cycles
+        } else {
+            self.undefined()
+        }
+    }
+
+    /// MCRR
+    /// Move double from ARM to coprocessor
+    fn mcrr(&mut self, coproc: usize, arm_reg_n: usize, arm_reg_d: usize, op_reg: usize, op: u32) -> usize {
+        let data_lo = self.read_reg(arm_reg_d);
+        let data_hi = self.read_reg(arm_reg_n);
+        if let Some(c) = self.mut_coproc_v5(coproc) {
+            c.mcrr(op_reg, data_lo, data_hi, op)
+        } else {
+            self.undefined()
+        }
+    }
 }

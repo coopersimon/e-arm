@@ -179,7 +179,7 @@ impl ARMCore<TestMem> for TestARM4Core {
         &mut self.memory
     }
 
-    fn ref_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut CoprocImpl> {
+    fn mut_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut CoprocV4Impl> {
         None
     }
 }
