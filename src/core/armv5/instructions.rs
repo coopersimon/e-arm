@@ -63,11 +63,11 @@ pub enum ARMv5InstructionType {
     QDADD{rd: usize, rm: usize, rn: usize},
     QDSUB{rd: usize, rm: usize, rn: usize},
     // Signed halfword multiply
-    SMULxy{rd: usize, rs: usize, rm: usize, y: bool, x: bool},
-    SMULWy{rd: usize, rs: usize, rm: usize, y: bool},
-    SMLAxy{rd: usize, rs: usize, rm: usize, rn: usize, y: bool, x: bool},
-    SMLAWy{rd: usize, rs: usize, rm: usize, rn: usize, y: bool},
-    SMLALxy{rd_hi: usize, rd_lo: usize, rs: usize, rm: usize, y: bool, x: bool},
+    SMULxy{rd: usize, rm: usize, rs: usize, y: bool, x: bool},
+    SMULWy{rd: usize, rm: usize, rs: usize, y: bool},
+    SMLAxy{rd: usize, rm: usize, rs: usize, rn: usize, y: bool, x: bool},
+    SMLAWy{rd: usize, rm: usize, rs: usize, rn: usize, y: bool},
+    SMLALxy{rd_hi: usize, rd_lo: usize, rm: usize, rs: usize, y: bool, x: bool},
     // Other special instructions
     BKPT{comment: u32},
     CLZ{rd: usize, rm: usize},
@@ -117,11 +117,11 @@ impl fmt::Display for ARMv5Instruction {
             QDADD{rd, rm, rn} => write!(f, "QDADD R{},R{},R{}", rd, rm, rn),
             QDSUB{rd, rm, rn} => write!(f, "QDSUB R{},R{},R{}", rd, rm, rn),
             // Signed halfword multiply
-            SMULxy{rd, rs, rm, y, x} => write!(f, "SMUL{}{}{} R{},R{},R{}", if *x {"T"} else {"B"}, if *y {"T"} else {"B"}, self.cond, rd, rm, rs),
-            SMULWy{rd, rs, rm, y} => write!(f, "SMULW{}{} R{},R{},R{}", if *y {"T"} else {"B"}, self.cond, rd, rm, rs),
-            SMLAxy{rd, rs, rm, rn, y, x} => write!(f, "SMLA{}{}{} R{},R{},R{},R{}", if *x {"T"} else {"B"}, if *y {"T"} else {"B"}, self.cond, rd, rm, rs, rn),
-            SMLAWy{rd, rs, rm, rn, y} => write!(f, "SMLAW{}{} R{},R{},R{},R{}", if *y {"T"} else {"B"}, self.cond, rd, rm, rs, rn),
-            SMLALxy{rd_hi, rd_lo, rs, rm, y, x} => write!(f, "SMLAL{}{}{} R{},R{},R{},R{}", if *x {"T"} else {"B"}, if *y {"T"} else {"B"}, self.cond, rd_lo, rd_hi, rm, rs),
+            SMULxy{rd, rm, rs, y, x} => write!(f, "SMUL{}{}{} R{},R{},R{}", if *x {"T"} else {"B"}, if *y {"T"} else {"B"}, self.cond, rd, rm, rs),
+            SMULWy{rd, rm, rs, y} => write!(f, "SMULW{}{} R{},R{},R{}", if *y {"T"} else {"B"}, self.cond, rd, rm, rs),
+            SMLAxy{rd, rm, rs, rn, y, x} => write!(f, "SMLA{}{}{} R{},R{},R{},R{}", if *x {"T"} else {"B"}, if *y {"T"} else {"B"}, self.cond, rd, rm, rs, rn),
+            SMLAWy{rd, rm, rs, rn, y} => write!(f, "SMLAW{}{} R{},R{},R{},R{}", if *y {"T"} else {"B"}, self.cond, rd, rm, rs, rn),
+            SMLALxy{rd_hi, rd_lo, rm, rs, y, x} => write!(f, "SMLAL{}{}{} R{},R{},R{},R{}", if *x {"T"} else {"B"}, if *y {"T"} else {"B"}, self.cond, rd_lo, rd_hi, rm, rs),
             // Other special instructions
             BKPT{comment} => write!(f, "BKPT {:X}", comment),
             CLZ{rd, rm} => write!(f, "CLZ{} R{},R{}", self.cond, rd, rm),
