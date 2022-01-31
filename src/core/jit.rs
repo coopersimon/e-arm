@@ -4,6 +4,27 @@ use std::{
     rc::Rc,
     marker::PhantomData
 };
+use crate::{
+    ARMCore, Mem32
+};
+
+/// Jit version of the ARM core.
+/// 
+/// Required methods to JIT.
+pub trait ARMCoreJIT<M: Mem32<Addr = u32>>: ARMCore<M> {
+    /// Get a reference to all of the registers.
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32];
+
+    /// Call a subroutine from JIT.
+    /// 
+    /// This should ONLY be called from inside JIT compiled code.
+    fn jit_call_subroutine(&mut self, dest: u32);
+
+    /// Clock and handle interrupts from JIT.
+    /// 
+    /// This should ONLY be called from inside JIT compiled code.
+    fn jit_clock(&mut self, cycles: usize);
+}
 
 /// A subroutine to execute.
 pub enum Subroutine<T> {

@@ -110,8 +110,6 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// Can only access registers available in the current mode.
     fn write_reg(&mut self, n: usize, data: u32);
-    /// Get a reference to all of the registers.
-    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32];
 
     /// Directly modify the PC.
     /// 
@@ -120,19 +118,12 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     fn do_branch(&mut self, dest: u32);
     /// Call a subroutine.
     /// 
-    /// This is the entry point for JIT compiled code.
+    /// This is the entry point for JIT compiled code,
+    /// on compatible processors.
     fn call_subroutine(&mut self, dest: u32);
-    /// Call a subroutine from JIT.
-    /// 
-    /// This should ONLY be called from inside JIT compiled code.
-    fn jit_call_subroutine(&mut self, dest: u32);
 
     /// Clock and handle interrupts.
     fn clock(&mut self, cycles: usize);
-    /// Clock and handle interrupts from JIT.
-    /// 
-    /// This should ONLY be called from inside JIT compiled code.
-    fn jit_clock(&mut self, cycles: usize);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;
@@ -171,40 +162,40 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Reference the memory bus immutably.
     fn ref_mem<'a>(&'a self) -> &'a M;
     /// Reference the memory bus mutably.
-    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
+    fn mut_mem<'a>(&'a mut self) -> &'a mut M;
     /// Reference a coprocessor mutably.
     fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV4Impl>;
 
     // Memory
     fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {
-        self.ref_mem_mut().load_byte(cycle, addr)
+        self.mut_mem().load_byte(cycle, addr)
     }
     fn store_byte(&mut self, cycle: MemCycleType, addr: u32, data: u8) -> usize {
-        self.ref_mem_mut().store_byte(cycle, addr, data)
+        self.mut_mem().store_byte(cycle, addr, data)
     }
     /// Load a halfword, force aligning the address and rotating the result.
     fn load_halfword(&mut self, cycle: MemCycleType, addr: u32) -> (u16, usize) {
-        let (data, cycles) = self.ref_mem_mut().load_halfword(cycle, addr & 0xFFFF_FFFE);
+        let (data, cycles) = self.mut_mem().load_halfword(cycle, addr & 0xFFFF_FFFE);
         (data.rotate_right((addr & 1) * 8), cycles)
     }
     /// Store a halfword, force aligning the address.
     fn store_halfword(&mut self, cycle: MemCycleType, addr: u32, data: u16) -> usize {
-        self.ref_mem_mut().store_halfword(cycle, addr & 0xFFFF_FFFE, data)
+        self.mut_mem().store_halfword(cycle, addr & 0xFFFF_FFFE, data)
     }
     /// Load a halfword, force aligning the address and rotating the result.
     fn load_word(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
-        let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
+        let (data, cycles) = self.mut_mem().load_word(cycle, addr & 0xFFFF_FFFC);
         (data.rotate_right((addr & 3) * 8), cycles)
     }
     /// Load a word, force aligning the address.
     /// Used for load multiple.
     fn load_word_force_align(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
-        let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
+        let (data, cycles) = self.mut_mem().load_word(cycle, addr & 0xFFFF_FFFC);
         (data, cycles)
     }
     /// Store a word, force aligning the address.
     fn store_word(&mut self, cycle: MemCycleType, addr: u32, data: u32) -> usize {
-        self.ref_mem_mut().store_word(cycle, addr & 0xFFFF_FFFC, data)
+        self.mut_mem().store_word(cycle, addr & 0xFFFF_FFFC, data)
     }
 }
 

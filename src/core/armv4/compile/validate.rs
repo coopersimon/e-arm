@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use crate::{
     Mem32, MemCycleType,
-    core::{ARMCore, CompilerError, ReturnLocation, constants, decode_arm_v4, decode_thumb_v4}
+    core::{ARMCoreJIT, CompilerError, ReturnLocation, constants, decode_arm_v4, decode_thumb_v4}
 };
 use super::{
     DecodedInstruction,
@@ -61,7 +61,7 @@ impl Validator {
         }
     }
 
-    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
+    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
         let i_size = if thumb {constants::T_SIZE} else {constants::I_SIZE};
         let mut labels = BTreeMap::new();
         let mut label_idx = 0;

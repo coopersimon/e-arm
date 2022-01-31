@@ -10,7 +10,7 @@ use std::{
     marker::PhantomData
 };
 use crate::{
-    Mem32, ARMCore, MemCycleType,
+    Mem32, ARMCoreJIT, MemCycleType,
     core::{
         armv4::instructions::{
             ARMv4InstructionType,
@@ -33,7 +33,7 @@ const ECX: u8 = 1;
 const EDX: u8 = 2;
 const EBX: u8 = 3;
 
-pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
+pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> {
     assembler: Assembler<X64Relocation>,
     label_table: std::collections::BTreeMap<usize, DynamicLabel>,
 
@@ -48,7 +48,7 @@ pub struct CodeGeneratorX64<M: Mem32<Addr = u32>, T: ARMCore<M>> {
     _unused_t: PhantomData<T>
 }
 
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> CodeGeneratorX64<M, T> {
     pub fn new(start_pc: u32, i_size: u32) -> Box<Self> {
         Box::new(Self {
             assembler: Assembler::new().unwrap(),
@@ -231,7 +231,7 @@ enum DataOperand {
 }
 
 // Helpers
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> CodeGeneratorX64<M, T> {
     /// Dynamic label lookup
     fn get_label(&mut self, id: usize) -> DynamicLabel {
         if let Some(label) = self.label_table.get(&id) {
@@ -508,7 +508,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 }
 
 // Manipulating cycles
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> CodeGeneratorX64<M, T> {
     /// Generate code to add to cycle count.
     fn add_const_cycles(&mut self, cycles: usize) {
         dynasm!(self.assembler
@@ -578,7 +578,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 
 // Operands for data instructions.
 // Includes shifts.
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> CodeGeneratorX64<M, T> {
 
     /// Get the first register for an ALU operation.
     /// If the reg is the PC, it will generate code to write the immediate value into
@@ -921,7 +921,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 }
 
 // Instruction helpers
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> CodeGeneratorX64<M, T> {
     /// Do an ALU operation.
     /// 
     /// Logical ops should set `shift_carry` to true.
@@ -1044,7 +1044,7 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 }
 
 // Instructions
-impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
+impl<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>> CodeGeneratorX64<M, T> {
 
     fn swi(&mut self, comment: u32, pc: u32) {
         let software_exception = wrap_software_exception::<M, T> as i64;
@@ -2075,55 +2075,55 @@ impl<M: Mem32<Addr = u32>, T: ARMCore<M>> CodeGeneratorX64<M, T> {
 }
 
 // CPU wrappers
-pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, dest: u32) {
+pub unsafe extern "Rust" fn wrap_call_subroutine<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, dest: u32) {
     cpu.as_mut().unwrap().jit_call_subroutine(dest);
 }
 
-pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T) -> *mut u32 {
+pub unsafe extern "Rust" fn wrap_mut_regs<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T) -> *mut u32 {
     cpu.as_mut().unwrap().mut_regs().as_mut_ptr()
 }
 
-pub unsafe extern "Rust" fn wrap_software_exception<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, _comment: u32) {
+pub unsafe extern "Rust" fn wrap_software_exception<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, _comment: u32) {
     // TODO: swi_hook
     cpu.as_mut().unwrap().software_exception();
 }
 
-pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+pub unsafe extern "Rust" fn wrap_load_word<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
     cpu.as_mut().unwrap().load_word(MemCycleType::N, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_load_word_force_align_n<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+pub unsafe extern "Rust" fn wrap_load_word_force_align_n<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
     cpu.as_mut().unwrap().load_word_force_align(MemCycleType::N, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_load_word_force_align_s<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
+pub unsafe extern "Rust" fn wrap_load_word_force_align_s<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32) -> (u32, usize) {
     cpu.as_mut().unwrap().load_word_force_align(MemCycleType::S, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_load_halfword<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u16, usize) {
+pub unsafe extern "Rust" fn wrap_load_halfword<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32) -> (u16, usize) {
     cpu.as_mut().unwrap().load_halfword(MemCycleType::N, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_load_byte<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32) -> (u8, usize) {
+pub unsafe extern "Rust" fn wrap_load_byte<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32) -> (u8, usize) {
     cpu.as_mut().unwrap().load_byte(MemCycleType::N, addr)
 }
 
-pub unsafe extern "Rust" fn wrap_store_word_n<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
+pub unsafe extern "Rust" fn wrap_store_word_n<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
     cpu.as_mut().unwrap().store_word(MemCycleType::N, addr, data)
 }
 
-pub unsafe extern "Rust" fn wrap_store_word_s<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
+pub unsafe extern "Rust" fn wrap_store_word_s<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32, data: u32) -> usize {
     cpu.as_mut().unwrap().store_word(MemCycleType::S, addr, data)
 }
 
-pub unsafe extern "Rust" fn wrap_store_halfword<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u16) -> usize {
+pub unsafe extern "Rust" fn wrap_store_halfword<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32, data: u16) -> usize {
     cpu.as_mut().unwrap().store_halfword(MemCycleType::N, addr, data)
 }
 
-pub unsafe extern "Rust" fn wrap_store_byte<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, addr: u32, data: u8) -> usize {
+pub unsafe extern "Rust" fn wrap_store_byte<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, addr: u32, data: u8) -> usize {
     cpu.as_mut().unwrap().store_byte(MemCycleType::N, addr, data)
 }
 
-pub unsafe extern "Rust" fn wrap_clock<M: Mem32<Addr = u32>, T: ARMCore<M>>(cpu: *mut T, cycles: usize) {
+pub unsafe extern "Rust" fn wrap_clock<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(cpu: *mut T, cycles: usize) {
     cpu.as_mut().unwrap().jit_clock(cycles);
 }

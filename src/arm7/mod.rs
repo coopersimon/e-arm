@@ -9,6 +9,7 @@ use crate::core::{
     SPSR,
     SwiHook,
     ARMCore,
+    ARMCoreJIT,
     ARMv4,
     ARMv4Compiler,
     CoprocV4Impl,
@@ -307,9 +308,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.regs[n] = data;
         }
     }
-    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
-        &mut self.regs
-    }
 
     fn do_branch(&mut self, dest: u32) {
         self.regs[PC_REG] = dest;
@@ -329,30 +327,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
         self.flush_pipeline();
     }
-    fn jit_call_subroutine(&mut self, dest: u32) {
-        match self.jit_lookup(dest) {
-            Some(subroutine) => {
-                subroutine.call(self);
-                self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
-                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
-            },
-            None => {
-                // Need to spin up another interpreter.
-                self.flush_pipeline();
-                self.regs[PC_REG] = dest;
-                let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
-                loop {
-                    self.step();
-                    if return_location == self.regs[PC_REG] {
-                        self.regs[PC_REG] -= self.cpsr.instr_size();
-                        break;
-                    }
-                }
-            }
-        }
-
-        self.flush_pipeline();
-    }
 
     fn clock(&mut self, cycles: usize) {
         match self.mem.clock(cycles) {
@@ -362,34 +336,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             },
             Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) && self.decoded_instr.is_some() {
                 self.interrupt();
-            },
-            None => {}
-        }
-    }
-    fn jit_clock(&mut self, cycles: usize) {
-        match self.mem.clock(cycles) {
-            Some(ExternalException::RST) => self.reset(),
-            Some(ExternalException::FIQ) => if !self.cpsr.contains(CPSR::F) {
-                self.fast_interrupt();
-                let return_location = self.regs[LINK_REG] - I_SIZE;
-                loop {
-                    self.step();
-                    if return_location == self.regs[PC_REG] {
-                        break;
-                    }
-                }
-            },
-            Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) {
-                self.interrupt();
-                self.can_compile = false;
-                let return_location = self.regs[LINK_REG] - I_SIZE;
-                loop {
-                    self.step();
-                    if return_location == self.regs[PC_REG] {
-                        break;
-                    }
-                }
-                self.can_compile = true;
             },
             None => {}
         }
@@ -564,12 +510,72 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         &self.mem
     }
 
-    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M {
+    fn mut_mem<'a>(&'a mut self) -> &'a mut M {
         &mut self.mem
     }
 
     fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV4Impl> {
         self.coproc[coproc].as_mut()
+    }
+}
+
+impl<M: Mem32<Addr = u32>> ARMCoreJIT<M> for ARM7TDMI<M> {
+    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
+        &mut self.regs
+    }
+
+    fn jit_call_subroutine(&mut self, dest: u32) {
+        match self.jit_lookup(dest) {
+            Some(subroutine) => {
+                subroutine.call(self);
+                self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
+                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
+            },
+            None => {
+                // Need to spin up another interpreter.
+                self.flush_pipeline();
+                self.regs[PC_REG] = dest;
+                let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
+                loop {
+                    self.step();
+                    if return_location == self.regs[PC_REG] {
+                        self.regs[PC_REG] -= self.cpsr.instr_size();
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.flush_pipeline();
+    }
+
+    fn jit_clock(&mut self, cycles: usize) {
+        match self.mem.clock(cycles) {
+            Some(ExternalException::RST) => self.reset(),
+            Some(ExternalException::FIQ) => if !self.cpsr.contains(CPSR::F) {
+                self.fast_interrupt();
+                let return_location = self.regs[LINK_REG] - I_SIZE;
+                loop {
+                    self.step();
+                    if return_location == self.regs[PC_REG] {
+                        break;
+                    }
+                }
+            },
+            Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) {
+                self.interrupt();
+                self.can_compile = false;
+                let return_location = self.regs[LINK_REG] - I_SIZE;
+                loop {
+                    self.step();
+                    if return_location == self.regs[PC_REG] {
+                        break;
+                    }
+                }
+                self.can_compile = true;
+            },
+            None => {}
+        }
     }
 }
 

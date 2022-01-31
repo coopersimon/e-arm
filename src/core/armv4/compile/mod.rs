@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::{
     Mem32,
-    core::{ARMCore, JITObject, CompilerError, ARMv4Instruction, constants}
+    core::{ARMCoreJIT, JITObject, CompilerError, ARMv4Instruction, constants}
 };
 
 /// An object to compile ARM code into the host platform's machine code.
@@ -20,7 +20,7 @@ impl ARMv4Compiler {
     }
 
     /// Try and compile a subroutine.
-    pub fn compile_arm<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<T>>, CompilerError> {
+    pub fn compile_arm<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<T>>, CompilerError> {
         let validator = Box::new(validate::Validator::new(addr));
         let instructions = validator.decode_and_validate::<M, T>(mem, false)?;
 
@@ -35,7 +35,7 @@ impl ARMv4Compiler {
     }
 
     /// Try and compile a THUMB subroutine.
-    pub fn compile_thumb<M: Mem32<Addr = u32>, T: ARMCore<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<T>>, CompilerError> {
+    pub fn compile_thumb<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(&mut self, addr: u32, mem: &mut M) -> Result<Rc<JITObject<T>>, CompilerError> {
         let validator = Box::new(validate::Validator::new(addr));
         let instructions = validator.decode_and_validate::<M, T>(mem, true)?;
 
