@@ -1,7 +1,10 @@
 // TODO: use test core instead of this one.
 use crate::core::*;
+use crate::core::armv5::*;
+use crate::core::armv4::{
+    ARMv4, CoprocV4Impl
+};
 use super::super::test_utils::*;
-use super::ARMCoreV5;
 
 struct TestARM5Core {
     regs: [u32; 16],
@@ -143,7 +146,7 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        let instr = decode_arm_v5(self.instr);
+        let instr = decode_arm(self.instr);
         let cycles = instr.execute(&mut cpu);
 
         for (i, val) in out.regs.iter().enumerate() {

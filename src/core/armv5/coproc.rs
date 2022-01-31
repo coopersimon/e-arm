@@ -1,4 +1,4 @@
-use crate::core::CoprocV4;
+use crate::armv4::CoprocV4;
 
 pub type CoprocV5Impl = Box<dyn CoprocV5 + Send>;
 

@@ -1,5 +1,6 @@
 // TODO: use test core instead of this one.
 use crate::core::*;
+use crate::core::armv4::*;
 use super::super::test_utils::*;
 
 struct TestARM4Core {
@@ -127,7 +128,7 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        let instr = decode_arm_v4(self.instr);
+        let instr = decode_arm(self.instr);
         let cycles = instr.execute(&mut cpu);
 
         for (i, val) in out.regs.iter().enumerate() {

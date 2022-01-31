@@ -8,25 +8,11 @@ mod arm;
 mod thumb;
 
 use crate::{
-    core::{ARMCondition, ARMv4Instruction, ARMv5Instruction},
+    core::ARMCondition,
 };
 
-use self::arm::decode_instruction;
-use thumb::decode_thumb;
-
-pub fn decode_arm_v4(i: u32) -> ARMv4Instruction {
-    decode_instruction(i).into()
-}
-pub fn decode_arm_v5(i: u32) -> ARMv5Instruction {
-    decode_instruction(i)
-}
-
-pub fn decode_thumb_v4(i: u16) -> ARMv4Instruction {
-    decode_thumb(i).into()
-}
-pub fn decode_thumb_v5(i: u16) -> ARMv5Instruction {
-    decode_thumb(i)
-}
+pub use self::arm::decode_instruction;
+pub use thumb::decode_thumb;
 
 /// Decode the condition from the instruction.
 fn decode_cond(cond_bits: u32) -> ARMCondition {

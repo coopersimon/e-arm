@@ -8,7 +8,8 @@ use std::rc::Rc;
 
 use crate::{
     Mem32,
-    core::{ARMCoreJIT, JITObject, CompilerError, ARMv4Instruction, constants}
+    core::{ARMCoreJIT, JITObject, CompilerError, constants},
+    armv4::ARMv4Instruction
 };
 
 /// An object to compile ARM code into the host platform's machine code.

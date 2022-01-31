@@ -1,7 +1,8 @@
 // Instructions
 
 use crate::{
-    core::{ARMCondition, ARMv4},
+    core::ARMCondition,
+    core::armv4::ARMv4,
     core::armv5::instructions::{
         ARMv5Instruction, ARMv5InstructionType
     },

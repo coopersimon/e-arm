@@ -1,8 +1,8 @@
 /// Core traits and types for ARM processors (data access).
 
-mod armv4;
-mod armv5;
-mod decode;
+pub mod armv4;
+pub mod armv5;
+pub mod decode;
 mod jit;
 
 #[allow(dead_code)]
@@ -12,17 +12,11 @@ use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
 use crate::memory::{Mem32, MemCycleType};
+use crate::armv4::CoprocV4Impl;
 
 pub use jit::*;
 
 pub use decode::*;
-
-pub use armv4::{
-    instructions::ARMv4Instruction,
-    execute::ARMv4,
-    compile::ARMv4Compiler,
-    coproc::*
-};
 
 pub use armv5::{
     instructions::ARMv5Instruction,

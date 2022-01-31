@@ -5,11 +5,10 @@ mod memory;
 mod debugger;
 
 pub use crate::core::{
-    ARMCore, ARMCoreJIT, CPSR, SwiHook, CoprocV4Impl,
-    ARMv4, ARMv4Instruction, CoprocV4,
-    ARMv5, ARMv5Instruction, CoprocV5,
-    decode_arm_v4, decode_thumb_v4, decode_arm_v5, decode_thumb_v5
+    ARMCore, ARMCoreJIT, CPSR, SwiHook
 };
+pub use crate::core::armv4 as armv4;
+pub use crate::core::armv5 as armv5;
 
 pub use crate::memory::{
     Mem32, MemCycleType

@@ -4,9 +4,12 @@ use crate::{
         u32, u64
     },
     core::{
-        CPSR, ARMv4,
+        CPSR,
         constants::*,
-        armv4::instructions::{TransferParams, ShiftOperand, OpData}
+    },
+    armv4::{
+        ARMv4,
+        instructions::{TransferParams, ShiftOperand, OpData}
     },
     memory::{Mem32, MemCycleType}
 };

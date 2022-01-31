@@ -5,7 +5,8 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use crate::{
     Mem32, MemCycleType,
-    core::{ARMCoreJIT, CompilerError, ReturnLocation, constants, decode_arm_v4, decode_thumb_v4}
+    core::{ARMCoreJIT, CompilerError, ReturnLocation, constants},
+    armv4::{decode_arm, decode_thumb}
 };
 use super::{
     DecodedInstruction,
@@ -73,10 +74,10 @@ impl Validator {
             // Decode the next instruction.
             let (decoded, cycles) = if thumb {
                 let (i, cycles) = mem.load_halfword(MemCycleType::S, self.current_addr);
-                (decode_thumb_v4(i), cycles)
+                (decode_thumb(i), cycles)
             } else {
                 let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
-                (decode_arm_v4(i), cycles)
+                (decode_arm(i), cycles)
             };
             //println!("Encountered i: {}", decoded);
 
