@@ -72,9 +72,9 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
                 cpsr.insert(CPSR::Q);
                 self.write_flags(cpsr);
                 self.write_reg(rd, if op1 < 0 {
-                    Q_MAX
-                } else {
                     Q_MIN
+                } else {
+                    Q_MAX
                 });
             }
         }
@@ -85,7 +85,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// Will saturate and set Q flag if overflow occurs.
     fn qdop2(&mut self, rn: usize) -> i32 {
         let reg = self.read_reg(rn) as i32;
-        match reg.checked_shl(1) {
+        match reg.checked_mul(2) {
             Some(result) => result,
             None => {
                 let mut cpsr = self.read_cpsr();
@@ -133,9 +133,9 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
                 cpsr.insert(CPSR::Q);
                 self.write_flags(cpsr);
                 self.write_reg(rd, if op1 < 0 {
-                    Q_MAX
-                } else {
                     Q_MIN
+                } else {
+                    Q_MAX
                 });
             }
         }

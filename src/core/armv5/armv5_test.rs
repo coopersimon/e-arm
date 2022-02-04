@@ -283,6 +283,231 @@ fn test_qadd() {
                 cpsr: CPSR::Q,
                 cycles: 0,
             }
+        ),
+        (
+            // QADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0x7FFFFFFF, 0],
+                cpsr: None,
+                instr: 0xE1020051
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFF), Some(0x7FFFFFFF), Some(0)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
+
+#[test]
+fn test_qsub() {
+    let data = vec![
+        (
+            // QSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x12345678, 0x12345678],
+                cpsr: None,
+                instr: 0xE1220051
+            },
+            TestOut {
+                regs: vec![Some(0), Some(0x12345678), Some(0x12345678)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // QSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x80000000, 0x1234],
+                cpsr: None,
+                instr: 0xE1220051
+            },
+            TestOut {
+                regs: vec![Some(0x80000000), Some(0x80000000), Some(0x1234)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x80000000, 0],
+                cpsr: None,
+                instr: 0xE1220051
+            },
+            TestOut {
+                regs: vec![Some(0x80000000), Some(0x80000000), Some(0)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // QSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x7FFFFFFF, 0xFFFFFFFF],
+                cpsr: None,
+                instr: 0xE1220051
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFF), Some(0x7FFFFFFF), Some(0xFFFFFFFF)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x7FFFFFFF, 0x7FFFFFF0],
+                cpsr: Some(CPSR::Q),
+                instr: 0xE1220051
+            },
+            TestOut {
+                regs: vec![Some(0xF), Some(0x7FFFFFFF), Some(0x7FFFFFF0)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
+
+#[test]
+fn test_qdadd() {
+    let data = vec![
+        (
+            // QDADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0x12345678, 0x12345678],
+                cpsr: None,
+                instr: 0xE1420051
+            },
+            TestOut {
+                regs: vec![Some(0x369D0368), Some(0x12345678), Some(0x12345678)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // QDADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0x12345678, 0xB0001234],
+                cpsr: None,
+                instr: 0xE1420051
+            },
+            TestOut {
+                regs: vec![Some(0x92345678), Some(0x12345678), Some(0xB0001234)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QDADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0x12345678, 0x40000000],
+                cpsr: None,
+                instr: 0xE1420051
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFF), Some(0x12345678), Some(0x40000000)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QDADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0xC000AAAA, 0xB0001234],
+                cpsr: None,
+                instr: 0xE1420051
+            },
+            TestOut {
+                regs: vec![Some(0x80000000), Some(0xC000AAAA), Some(0xB0001234)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QDADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0xFFFFFFFF, 0xFFFFFFFF],
+                cpsr: None,
+                instr: 0xE1420051
+            },
+            TestOut {
+                regs: vec![Some(0xFFFFFFFD), Some(0xFFFFFFFF), Some(0xFFFFFFFF)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
+
+#[test]
+fn test_qdsub() {
+    let data = vec![
+        (
+            // QDSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x12345678, 0x12345678],
+                cpsr: None,
+                instr: 0xE1620051
+            },
+            TestOut {
+                regs: vec![Some(0xEDCBA988), Some(0x12345678), Some(0x12345678)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // QDSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x7FFFFFFF, 0x70000000],
+                cpsr: None,
+                instr: 0xE1620051
+            },
+            TestOut {
+                regs: vec![Some(0), Some(0x7FFFFFFF), Some(0x70000000)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QDSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x7FFFFFFF, 0xC0000000],
+                cpsr: None,
+                instr: 0xE1620051
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFF), Some(0x7FFFFFFF), Some(0xC0000000)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QDSUB R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x7FFFFFFF, 0x60000000],
+                cpsr: None,
+                instr: 0xE1620051
+            },
+            TestOut {
+                regs: vec![Some(0), Some(0x7FFFFFFF), Some(0x60000000)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
         )
     ];
 
