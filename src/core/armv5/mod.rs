@@ -24,5 +24,5 @@ pub fn decode_thumb(i: u16) -> ARMv5Instruction {
 
 pub trait ARMCoreV5 {
     /// Reference a coprocessor mutably.
-    fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV5Impl>;
+    fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV5>;
 }

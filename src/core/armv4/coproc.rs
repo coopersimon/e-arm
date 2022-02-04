@@ -1,6 +1,6 @@
 /// Coprocessor interface for ARM processor.
 
-pub type CoprocV4Impl = Box<dyn CoprocV4 + Send>;
+pub type CoprocV4Impl = Box<dyn CoprocV4>;
 
 /// ARMv4 Coprocessor interface.
 /// The main processor will call the coprocessor via these methods.

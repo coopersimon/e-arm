@@ -7,7 +7,7 @@ pub mod coproc;
 pub mod execute;
 pub mod compile;
 
-use crate::core::decode::*;
+use crate::core::decode;
 
 pub use self::{
     instructions::ARMv4Instruction,
@@ -17,10 +17,10 @@ pub use self::{
 };
 
 pub fn decode_arm(i: u32) -> ARMv4Instruction {
-    decode_instruction(i).into()
+    decode::decode_instruction(i).into()
 }
 pub fn decode_thumb(i: u16) -> ARMv4Instruction {
-    decode_thumb(i).into()
+    decode::decode_thumb(i).into()
 }
 
 /// Calculate the number of cycles needed for the multiply.

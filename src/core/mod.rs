@@ -12,7 +12,7 @@ use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
 use crate::memory::{Mem32, MemCycleType};
-use crate::armv4::CoprocV4Impl;
+use crate::armv4::CoprocV4;
 
 pub use jit::*;
 
@@ -158,7 +158,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Reference the memory bus mutably.
     fn mut_mem<'a>(&'a mut self) -> &'a mut M;
     /// Reference a coprocessor mutably.
-    fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV4Impl>;
+    fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV4>;
 
     // Memory
     fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {

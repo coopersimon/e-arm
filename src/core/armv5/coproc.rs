@@ -1,10 +1,10 @@
 use crate::armv4::CoprocV4;
 
-pub type CoprocV5Impl = Box<dyn CoprocV5 + Send>;
+pub type CoprocV5Impl = Box<dyn CoprocV5>;
 
 /// ARMv5 Coprocessor interface.
 /// The main processor will call the coprocessor via these methods.
-pub trait CoprocV5: CoprocV4 {
+pub trait CoprocV5 {
     /// Transfer from ARM register to Coproc register.
     fn mcr2(&mut self, dest_reg: usize, op_reg: usize, data: u32, op: u32, info: u32) -> usize;
 
@@ -25,4 +25,6 @@ pub trait CoprocV5: CoprocV4 {
 
     /// Coprocessor data operation.
     fn cdp2(&mut self, op: u32, reg_cn: usize, reg_cd: usize, info: u32, reg_cm: usize) -> usize;
+
+    fn as_v4<'a>(&'a mut self) -> &'a mut dyn CoprocV4;
 }

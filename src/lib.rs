@@ -1,8 +1,11 @@
 mod core;
-mod common;
-mod arm7;
 mod memory;
+
+mod arm7;
+mod arm9;
 mod debugger;
+
+mod common;
 
 pub use crate::core::{
     ARMCore, ARMCoreJIT, CPSR, SwiHook

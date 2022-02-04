@@ -105,13 +105,13 @@ impl ARMCore<TestMem> for TestARM5Core {
         &mut self.memory
     }
 
-    fn mut_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut CoprocV4Impl> {
+    fn mut_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut dyn CoprocV4> {
         None
     }
 }
 
 impl ARMCoreV5 for TestARM5Core {
-    fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocV5Impl> {
+    fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV5> {
         None
     }
 }
