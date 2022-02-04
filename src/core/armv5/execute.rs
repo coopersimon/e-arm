@@ -47,10 +47,14 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match op1.checked_add(op2) {
             Some(result) => self.write_reg(rd, result as u32),
             None => {
-                self.write_reg(rd, Q_MAX);
                 let mut cpsr = self.read_cpsr();
                 cpsr.insert(CPSR::Q);
                 self.write_flags(cpsr);
+                self.write_reg(rd, if op1 < 0 {
+                    Q_MIN
+                } else {
+                    Q_MAX
+                });
             }
         }
         0
@@ -64,10 +68,14 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match op1.checked_sub(op2) {
             Some(result) => self.write_reg(rd, result as u32),
             None => {
-                self.write_reg(rd, Q_MIN);
                 let mut cpsr = self.read_cpsr();
                 cpsr.insert(CPSR::Q);
                 self.write_flags(cpsr);
+                self.write_reg(rd, if op1 < 0 {
+                    Q_MAX
+                } else {
+                    Q_MIN
+                });
             }
         }
         0
@@ -243,7 +251,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
 
     /// PLD
     /// Pre-load data
-    fn pld(&mut self, transfer_params: TransferParams, offset: ShiftOperand) -> usize {
+    fn pld(&mut self, _transfer_params: TransferParams, _offset: ShiftOperand) -> usize {
         // TODO
         0
     }

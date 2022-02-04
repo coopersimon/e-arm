@@ -1,9 +1,7 @@
 // TODO: use test core instead of this one.
 use crate::core::*;
 use crate::core::armv5::*;
-use crate::core::armv4::{
-    ARMv4, CoprocV4Impl
-};
+use crate::core::armv4::ARMv4;
 use super::super::test_utils::*;
 
 struct TestARM5Core {
@@ -111,7 +109,7 @@ impl ARMCore<TestMem> for TestARM5Core {
 }
 
 impl ARMCoreV5 for TestARM5Core {
-    fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV5> {
+    fn mut_coproc_v5<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut dyn CoprocV5> {
         None
     }
 }
@@ -208,6 +206,81 @@ fn test_clz() {
             TestOut {
                 regs: vec![Some(0x00010000), None, None, None, None, None, None, None, None, None, Some(15)],
                 cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
+
+#[test]
+fn test_qadd() {
+    let data = vec![
+        (
+            // QADD R0, R1, R2: Cond=AL, Rn=2, Rd=0, Rm=1
+            TestIn {
+                regs: vec![0, 0x12345678, 0x12345678],
+                cpsr: None,
+                instr: 0xE1020051
+            },
+            TestOut {
+                regs: vec![Some(0x2468ACF0), Some(0x12345678), Some(0x12345678)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // QADD R0, R0, R1: Cond=AL, Rn=1, Rd=0, Rm=0
+            TestIn {
+                regs: vec![0x7FFFFFF0, 0x12345678],
+                cpsr: None,
+                instr: 0xE1010050
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFF), Some(0x12345678)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QADD R0, R0, R0: Cond=AL, Rn=0, Rd=0, Rm=0
+            TestIn {
+                regs: vec![0x80001234, 0x12345678],
+                cpsr: None,
+                instr: 0xE1000050
+            },
+            TestOut {
+                regs: vec![Some(0x80000000), Some(0x12345678)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QADD R0, R0, R1: Cond=AL, Rn=1, Rd=0, Rm=0
+            TestIn {
+                regs: vec![0x7FFF0000, 0xFFFF],
+                cpsr: Some(CPSR::Q),
+                instr: 0xE1010050
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFF), Some(0xFFFF)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // QADD R0, R0, R1: Cond=AL, Rn=1, Rd=0, Rm=0
+            TestIn {
+                regs: vec![0x7FFF0000, 0xFFFE],
+                cpsr: Some(CPSR::Q),
+                instr: 0xE1010050
+            },
+            TestOut {
+                regs: vec![Some(0x7FFFFFFE), Some(0xFFFE)],
+                cpsr: CPSR::Q,
                 cycles: 0,
             }
         )
