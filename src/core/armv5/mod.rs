@@ -6,7 +6,7 @@ pub mod instructions;
 pub mod coproc;
 pub mod execute;
 
-use crate::core::decode::*;
+use crate::core::decode;
 
 pub use self::{
     instructions::ARMv5Instruction,
@@ -15,11 +15,11 @@ pub use self::{
 };
 
 pub fn decode_arm(i: u32) -> ARMv5Instruction {
-    decode_instruction(i)
+    decode::decode_instruction(i)
 }
 
 pub fn decode_thumb(i: u16) -> ARMv5Instruction {
-    decode_thumb(i)
+    decode::decode_thumb(i)
 }
 
 pub trait ARMCoreV5 {

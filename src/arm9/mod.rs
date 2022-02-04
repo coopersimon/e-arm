@@ -4,7 +4,7 @@ use crate::core::{
     constants::*, Mode, CPSR, SPSR, SwiHook,
     ARMCore,
     armv4::{
-        ARMv4, CoprocV4Impl, CoprocV4
+        ARMv4, CoprocV4
     },
     armv5::{
         ARMCoreV5, ARMv5, CoprocV5, CoprocV5Impl, decode_arm, decode_thumb
@@ -16,13 +16,7 @@ use crate::memory::{
 };
 use crate::{
     ExternalException,
-    Debugger, CPUState
-};
-
-use std::{
-    rc::Rc,
-    collections::HashMap,
-    ops::Range
+    //Debugger, CPUState
 };
 
 const NUM_COPROCS: usize = 16;

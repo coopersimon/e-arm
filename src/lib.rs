@@ -20,6 +20,9 @@ pub use crate::memory::{
 pub use crate::arm7::{
     ARM7TDMI
 };
+pub use crate::arm9::{
+    ARM9ES
+};
 
 pub use crate::debugger::*;
 

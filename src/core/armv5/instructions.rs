@@ -135,7 +135,7 @@ impl fmt::Display for ARMv5Instruction {
             BLXI{offset} => write!(f, "BLX #{:X}", offset),
             BLXR{reg} => write!(f, "BLX{} R{}", self.cond, reg),
             // Transfer
-            PLD{transfer_params, offset} => write!(f, "PLD {}", offset),
+            PLD{offset, ..} => write!(f, "PLD {}", offset),
             LDRD{transfer_params, data_reg, offset} => write!(f, "LDR{}D R{},{}", self.cond, data_reg, transfer_params.so(offset)),
             STRD{transfer_params, data_reg, offset} => write!(f, "STR{}D R{},{}", self.cond, data_reg, transfer_params.so(offset)),
             // Q ALU
