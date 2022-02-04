@@ -626,3 +626,75 @@ fn test_smlaxy() {
         in_data.run_test(i, out_data);
     }
 }
+
+#[test]
+fn test_smulwy() {
+    let data = vec![
+        (
+            // SMULWB R0, R1, R2: Cond=AL, Rd=0, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x12345678, 0xABCD1234],
+                cpsr: Some(CPSR::N),
+                instr: 0xE12002A1
+            },
+            TestOut {
+                regs: vec![Some(0x14B60B6), Some(0x12345678), Some(0xABCD1234)],
+                cpsr: CPSR::N,
+                cycles: 0,
+            }
+        ),
+        (
+            // SMULWT R0, R1, R2: Cond=AL, Rd=0, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0xFEDCBA98, 0xABCD1234],
+                cpsr: None,
+                instr: 0xE12002E1
+            },
+            TestOut {
+                regs: vec![Some(0xAB098764), Some(0xFEDCBA98), Some(0xABCD1234)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
+
+#[test]
+fn test_smlawy() {
+    let data = vec![
+        (
+            // SMLAWB R0, R1, R2, R3: Cond=AL, Rd=0, Rn=3, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x12345678, 0xABCD1234, 0x12123434],
+                cpsr: Some(CPSR::Q),
+                instr: 0xE1203281
+            },
+            TestOut {
+                regs: vec![Some(0x135D94EA), Some(0x12345678), Some(0xABCD1234), Some(0x12123434)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // SMLAWT R0, R1, R2, R3: Cond=AL, Rd=0, Rn=2, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0xFEDCBA98, 0xABCD1234],
+                cpsr: None,
+                instr: 0xE12022C1
+            },
+            TestOut {
+                regs: vec![Some(0x56D69998), Some(0xFEDCBA98), Some(0xABCD1234)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
