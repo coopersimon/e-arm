@@ -515,3 +515,114 @@ fn test_qdsub() {
         in_data.run_test(i, out_data);
     }
 }
+
+#[test]
+fn test_smulxy() {
+    let data = vec![
+        (
+            // SMULBB R0, R1, R2: Cond=AL, Rd=0, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x10011212, 0x12345678],
+                cpsr: Some(CPSR::N),
+                instr: 0xE1600281
+            },
+            TestOut {
+                regs: vec![Some(0x61A8470), Some(0x10011212), Some(0x12345678)],
+                cpsr: CPSR::N,
+                cycles: 0,
+            }
+        ),
+        (
+            // SMULBT R0, R1, R2: Cond=AL, Rd=0, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x3434FEFE, 0xABAB1212],
+                cpsr: Some(CPSR::Z),
+                instr: 0xE16002C1
+            },
+            TestOut {
+                regs: vec![Some(0xAAFDFDAA), Some(0x3434FEFE), Some(0xABAB1212)],
+                cpsr: CPSR::Z,
+                cycles: 0,
+            }
+        ),
+        (
+            // SMULTT R0, R1, R2: Cond=AL, Rd=0, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x10011212, 0x12345678],
+                cpsr: None,
+                instr: 0xE16002E1
+            },
+            TestOut {
+                regs: vec![Some(0x1235234), Some(0x10011212), Some(0x12345678)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // SMULTB R0, R1, R2: Cond=AL, Rd=0, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x5678FFFF, 0x12341111],
+                cpsr: None,
+                instr: 0xE16002A1
+            },
+            TestOut {
+                regs: vec![Some(0x5C3B5F8), Some(0x5678FFFF), Some(0x12341111)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
+
+#[test]
+fn test_smlaxy() {
+    let data = vec![
+        (
+            // SMLABB R0, R1, R2, R3: Cond=AL, Rd=0, Rn=3, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x2222EFEF, 0x4444ABAB, 0x12345678],
+                cpsr: None,
+                instr: 0xE1003281
+            },
+            TestOut {
+                regs: vec![Some(0xB319401D), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x12345678)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // SMLATB R0, R1, R2, R3: Cond=AL, Rd=0, Rn=3, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x2222EFEF, 0x4444ABAB, 0x5678ABCD],
+                cpsr: Some(CPSR::Q),
+                instr: 0xE10032A1
+            },
+            TestOut {
+                regs: vec![Some(0x6D5C2E83), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x5678ABCD)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // SMLABT R0, R1, R2, R3: Cond=AL, Rd=0, Rn=3, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x8989EFEF, 0xCDCDFFFF, 0x89ABCDEF],
+                cpsr: None,
+                instr: 0xE10032C1
+            },
+            TestOut {
+                regs: vec![Some(0x4A8E5352), Some(0x8989EFEF), Some(0xCDCDFFFF), Some(0x89ABCDEF)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        )
+    ];
+
+    for (i, (in_data, out_data)) in data.iter().enumerate() {
+        in_data.run_test(i, out_data);
+    }
+}
