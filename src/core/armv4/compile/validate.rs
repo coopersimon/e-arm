@@ -5,14 +5,12 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use crate::{
     Mem32, MemCycleType,
-    core::{ARMCore, CompilerError, ReturnLocation, constants}
+    core::{ARMCoreJIT, CompilerError, ReturnLocation, constants},
+    armv4::{decode_arm, decode_thumb}
 };
 use super::{
     DecodedInstruction,
-    super::{
-        instructions::{ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
-        decode::*,
-    }
+    super::instructions::{ARMv4InstructionType, TransferParams, ALUOperand, ShiftOperand},
 };
 
 /// Minimum length of subroutine in instructions.
@@ -64,7 +62,7 @@ impl Validator {
         }
     }
 
-    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCore<M>>(mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
+    pub fn decode_and_validate<M: Mem32<Addr = u32>, T: ARMCoreJIT<M>>(mut self, mem: &mut M, thumb: bool) -> Result<Vec<DecodedInstruction>, CompilerError> {
         let i_size = if thumb {constants::T_SIZE} else {constants::I_SIZE};
         let mut labels = BTreeMap::new();
         let mut label_idx = 0;
@@ -76,10 +74,10 @@ impl Validator {
             // Decode the next instruction.
             let (decoded, cycles) = if thumb {
                 let (i, cycles) = mem.load_halfword(MemCycleType::S, self.current_addr);
-                (decode_thumb_v4(i), cycles)
+                (decode_thumb(i), cycles)
             } else {
                 let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
-                (decode_arm_v4(i), cycles)
+                (decode_arm(i), cycles)
             };
             //println!("Encountered i: {}", decoded);
 

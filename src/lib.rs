@@ -1,24 +1,27 @@
 mod core;
-mod common;
-mod arm7;
 mod memory;
-mod coproc;
+
+mod arm7;
+mod arm9;
 mod debugger;
 
+mod common;
+
 pub use crate::core::{
-    ARMCore, ARMv4, ARMv4Instruction, CPSR, SwiHook, decode_arm_v4, decode_thumb_v4
+    ARMCore, ARMCoreJIT, CPSR, SwiHook
 };
+pub use crate::core::armv4 as armv4;
+pub use crate::core::armv5 as armv5;
 
 pub use crate::memory::{
     Mem32, MemCycleType
 };
 
-pub use crate::coproc::{
-    Coprocessor, CoprocImpl
-};
-
 pub use crate::arm7::{
     ARM7TDMI
+};
+pub use crate::arm9::{
+    ARM9ES
 };
 
 pub use crate::debugger::*;

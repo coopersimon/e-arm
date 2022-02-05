@@ -3,9 +3,25 @@
 #[allow(dead_code)]
 mod armv4_test;
 pub mod instructions;
-pub mod decode;
+pub mod coproc;
 pub mod execute;
 pub mod compile;
+
+use crate::core::decode;
+
+pub use self::{
+    instructions::ARMv4Instruction,
+    execute::ARMv4,
+    compile::ARMv4Compiler,
+    coproc::{CoprocV4, CoprocV4Impl}
+};
+
+pub fn decode_arm(i: u32) -> ARMv4Instruction {
+    decode::decode_instruction(i).into()
+}
+pub fn decode_thumb(i: u16) -> ARMv4Instruction {
+    decode::decode_thumb(i).into()
+}
 
 /// Calculate the number of cycles needed for the multiply.
 /// This depends on the status of the most significant bytes of the second operand.

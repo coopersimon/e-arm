@@ -1,17 +1,18 @@
-/// ARMv4 Thumb Instruction Set
+/// ARM Thumb Instruction Set
 
 use super::decode_cond;
 use crate::{
     core::{
         constants::*,
         ARMCondition,
-        armv4::instructions::*
+        armv4::instructions::*,
+        armv5::instructions::*
     },
     common::u16::*
 };
 
 /// Decode the thumb instruction.
-pub fn decode_thumb(i: u16) -> ARMv4Instruction {
+pub fn decode_thumb(i: u16) -> ARMv5Instruction {
     const ALU: u16          = 0b000 << 13;
     const ALU_IMM: u16      = 0b001 << 13;
     const OTHER_LO: u16     = 0b010 << 13;
@@ -20,18 +21,18 @@ pub fn decode_thumb(i: u16) -> ARMv4Instruction {
     const STACK: u16        = 0b101 << 13;
     const OTHER_HI: u16     = 0b110 << 13;
     const BRANCH: u16       = 0b111 << 13;
-    let i_type = match i & bits(13, 15) {
-        ALU =>          decode_thumb_alu(i),
-        ALU_IMM =>      decode_thumb_alu_imm(i),
+    let instr = match i & bits(13, 15) {
+        ALU =>          decode_thumb_alu(i).into(),
+        ALU_IMM =>      decode_thumb_alu_imm(i).into(),
         OTHER_LO =>     decode_thumb_other_lo(i),
-        TRANSFER =>     decode_thumb_transfer(i),
-        TRANSFER_EXT => decode_thumb_transfer_ext(i),
+        TRANSFER =>     decode_thumb_transfer(i).into(),
+        TRANSFER_EXT => decode_thumb_transfer_ext(i).into(),
         STACK =>        decode_thumb_stack(i),
         OTHER_HI =>     return decode_thumb_other_hi(i),
-        BRANCH =>       decode_thumb_branch(i),
+        BRANCH =>       decode_thumb_branch(i).into(),
         _ => unreachable!(),
     };
-    ARMv4Instruction::new(ARMCondition::AL, i_type)
+    ARMv5Instruction{cond: ARMCondition::AL, instr}
 }
 
 /// Decode shift & arithmetic
@@ -91,18 +92,18 @@ fn decode_thumb_alu_imm(i: u16) -> ARMv4InstructionType {
 }
 
 /// Decode other ALU operations, branch exchange, and register offset memory ops
-fn decode_thumb_other_lo(i: u16) -> ARMv4InstructionType {
+fn decode_thumb_other_lo(i: u16) -> ARMv5InstructionType {
     if test_bit(i, 12) {
-        decode_thumb_transfer_reg(i)
+        decode_thumb_transfer_reg(i).into()
     } else if test_bit(i, 11) {
         // Load PC-relative
         let rd = ((i >> 8) & 0x7) as usize;
         let offset = ((i & 0xFF) << 2) as u32;
-        ARMv4InstructionType::TLDRPC{data_reg: rd, offset}
+        ARMv4InstructionType::TLDRPC{data_reg: rd, offset}.into()
     } else if test_bit(i, 10) {
         decode_thumb_hi_reg_ops(i)
     } else {
-        decode_thumb_alu_ops(i)
+        decode_thumb_alu_ops(i).into()
     }
 }
 
@@ -140,14 +141,18 @@ fn decode_thumb_transfer_reg(i: u16) -> ARMv4InstructionType {
 }
 
 /// Decode alu operations
-fn decode_thumb_hi_reg_ops(i: u16) -> ARMv4InstructionType {
+fn decode_thumb_hi_reg_ops(i: u16) -> ARMv5InstructionType {
     let rs = ((i >> 3) & 0xF) as usize;
     let rd = (((i >> 4) & 8) | (i & 7)) as usize;
     match (i & bits(8, 9)) >> 8 {
-        0b00 => ARMv4InstructionType::ADD{rd, rn: rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), set_flags: false},
-        0b01 => ARMv4InstructionType::CMP{rn: rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs))},
-        0b10 => ARMv4InstructionType::MOV{rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), set_flags: false},
-        0b11 => ARMv4InstructionType::BX{reg: rs},
+        0b00 => ARMv4InstructionType::ADD{rd, rn: rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), set_flags: false}.into(),
+        0b01 => ARMv4InstructionType::CMP{rn: rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs))}.into(),
+        0b10 => ARMv4InstructionType::MOV{rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), set_flags: false}.into(),
+        0b11 => if test_bit(i, 7) {
+            ARMv5InstructionType::BLXR{reg: rs}
+        } else {
+            ARMv4InstructionType::BX{reg: rs}.into()
+        },
         _ => unreachable!(),
     }
 }
@@ -245,10 +250,14 @@ fn decode_thumb_transfer_ext(i: u16) -> ARMv4InstructionType {
 }
 
 /// Decode stack-related instructions
-fn decode_thumb_stack(i: u16) -> ARMv4InstructionType {
+fn decode_thumb_stack(i: u16) -> ARMv5InstructionType {
     if test_bit(i, 12) {
         if test_bit(i, 10) {
-            decode_push_pop(i)
+            if test_bit(i, 9) {
+                ARMv5InstructionType::BKPT{comment: (i & 0xFF) as u32}
+            } else {
+                decode_push_pop(i).into()
+            }
         } else {
             let offset = ((i & 0x7F) << 2) as u32;
             let op2 = if test_bit(i, 7) {
@@ -256,16 +265,16 @@ fn decode_thumb_stack(i: u16) -> ARMv4InstructionType {
             } else {
                 ALUOperand::Normal(ShiftOperand::Immediate(offset))
             };
-            ARMv4InstructionType::ADD{rd: SP_REG, rn: SP_REG, op2, set_flags: false}
+            ARMv4InstructionType::ADD{rd: SP_REG, rn: SP_REG, op2, set_flags: false}.into()
         }
     } else {
         let rd = ((i >> 8) & 0x7) as usize;
         let offset = ((i & 0xFF) << 2) as u32;
         if test_bit(i, 11) {
             let op2 = ALUOperand::Normal(ShiftOperand::Immediate(offset));
-            ARMv4InstructionType::ADD{rd, rn: SP_REG, op2, set_flags: false}
+            ARMv4InstructionType::ADD{rd, rn: SP_REG, op2, set_flags: false}.into()
         } else {
-            ARMv4InstructionType::TADDPC{rd, op2: offset}
+            ARMv4InstructionType::TADDPC{rd, op2: offset}.into()
         }
     }
 }
@@ -297,24 +306,24 @@ fn decode_push_pop(i: u16) -> ARMv4InstructionType {
 }
 
 /// Decode load/store multiple and conditional branches
-fn decode_thumb_other_hi(i: u16) -> ARMv4Instruction {
+fn decode_thumb_other_hi(i: u16) -> ARMv5Instruction {
     if test_bit(i, 12) {
         decode_thumb_cond_branch(i)
     } else {
-        ARMv4Instruction::new(ARMCondition::AL, decode_thumb_transfer_mul(i))
+        ARMv5Instruction{cond: ARMCondition::AL, instr: decode_thumb_transfer_mul(i).into()}
     }
 }
 
 /// Decode conditional branches and software interrupt
-fn decode_thumb_cond_branch(i: u16) -> ARMv4Instruction {
+fn decode_thumb_cond_branch(i: u16) -> ARMv5Instruction {
     let cond_bits = ((i >> 8) & 0xF) as u32;
     if cond_bits == 0xF {
-        ARMv4Instruction::new(ARMCondition::AL, ARMv4InstructionType::SWI{comment: (i & 0xFF) as u32})
+        ARMv5Instruction{cond: ARMCondition::AL, instr: ARMv4InstructionType::SWI{comment: (i & 0xFF) as u32}.into()}
     } else {
         let cond = decode_cond(cond_bits);
         let offset_i = ((i & 0xFF) as u8) as i8;
         let offset = ((offset_i as i32) << 1) as u32;
-        ARMv4Instruction::new(cond, ARMv4InstructionType::TB{offset})
+        ARMv5Instruction{cond, instr: ARMv4InstructionType::TB{offset}.into()}
     }
 }
 

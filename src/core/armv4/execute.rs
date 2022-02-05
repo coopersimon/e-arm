@@ -1,15 +1,14 @@
 
 use super::{
-    super::constants::*,
     instructions::*,
     mul_cycles
 };
 use crate::{
     common::{
         u32::*,
-        u64, lo_64, hi_64, make_64
+        u64
     },
-    core::{ARMCore, CPSR},
+    core::{ARMCore, CPSR, constants::*},
     memory::{Mem32, MemCycleType}
 };
 
@@ -30,7 +29,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Called when an undefined instruction is encountered.
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
-        let pc = self.read_reg(PC_REG);
+        let pc = self.read_reg(PC_REG) - 8;
         let (val, _) = self.load_word(MemCycleType::S, pc);
         panic!("undefined: {:X} @ {:X}", val, pc);
         //self.undefined_exception();
@@ -418,8 +417,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = op2 as u64;
         let result = op1.wrapping_mul(op2_64);
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -437,10 +436,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = op2 as u64;
         let mul_result = op1.wrapping_mul(op2_64);
-        let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
+        let acc_op = u64::make(self.read_reg(rd_hi), self.read_reg(rd_lo));
         let result = mul_result.wrapping_add(acc_op);
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -458,8 +457,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = (op2 as i32) as i64;
         let result = op1.wrapping_mul(op2_64) as u64;
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -477,10 +476,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let op2 = self.read_reg(rn);
         let op2_64 = (op2 as i32) as i64;
         let mul_result = op1.wrapping_mul(op2_64) as u64;
-        let acc_op = make_64(self.read_reg(rd_hi), self.read_reg(rd_lo));
+        let acc_op = u64::make(self.read_reg(rd_hi), self.read_reg(rd_lo));
         let result = mul_result.wrapping_add(acc_op);
-        self.write_reg(rd_lo, lo_64(result));
-        self.write_reg(rd_hi, hi_64(result));
+        self.write_reg(rd_lo, u64::lo(result));
+        self.write_reg(rd_hi, u64::hi(result));
         if s {
             let mut cpsr = self.read_cpsr();
             cpsr.set(CPSR::N, u64::test_bit(result, 31));
@@ -983,7 +982,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// MRC
     /// Move from coprocessor to ARM
     fn mrc(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
-        if let Some(c) = self.ref_coproc(coproc) {
+        if let Some(c) = self.mut_coproc(coproc) {
             let (data, cycles) = c.mrc(coproc_reg, op_reg, op, info);
             self.write_reg(arm_reg, data);
             cycles
@@ -996,7 +995,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Move from ARM to coprocessor
     fn mcr(&mut self, coproc: usize, coproc_reg: usize, arm_reg: usize, op_reg: usize, op: u32, info: u32) -> usize {
         let data = self.read_reg(arm_reg);
-        if let Some(c) = self.ref_coproc(coproc) {
+        if let Some(c) = self.mut_coproc(coproc) {
             c.mcr(coproc_reg, op_reg, data, op, info)
         } else {
             self.undefined()
@@ -1019,7 +1018,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let cycles = if let Some(c) = self.ref_coproc(coproc) {
+        let cycles = if let Some(c) = self.mut_coproc(coproc) {
             let (data, cop_cycles) = c.stc(transfer_len, coproc_reg);
             let mem_cycles = self.store_word(MemCycleType::N, transfer_addr, data);
             self.next_fetch_non_seq();
@@ -1053,7 +1052,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         };
 
         let (data, mem_cycles) = self.load_word(MemCycleType::N, transfer_addr);
-        let cycles = if let Some(c) = self.ref_coproc(coproc) {
+        let cycles = if let Some(c) = self.mut_coproc(coproc) {
             c.ldc(transfer_len, coproc_reg, data) + mem_cycles
         } else {
             self.undefined()
@@ -1070,7 +1069,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// CDP
     /// Coprocessor data operation
     fn cdp(&mut self, op: u32, reg_n: usize, reg_d: usize, info: u32, reg_m: usize, coproc: usize) -> usize {
-        if let Some(c) = self.ref_coproc(coproc) {
+        if let Some(c) = self.mut_coproc(coproc) {
             c.cdp(op, reg_n, reg_d, info, reg_m)
         } else {
             self.undefined()

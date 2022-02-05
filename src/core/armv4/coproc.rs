@@ -1,10 +1,10 @@
 /// Coprocessor interface for ARM processor.
 
-pub type CoprocImpl = Box<dyn Coprocessor + Send>;
+pub type CoprocV4Impl = Box<dyn CoprocV4>;
 
-/// Coprocessor interface.
+/// ARMv4 Coprocessor interface.
 /// The main processor will call the coprocessor via these methods.
-pub trait Coprocessor {
+pub trait CoprocV4 {
     /// Transfer from ARM register to Coproc register.
     fn mcr(&mut self, dest_reg: usize, op_reg: usize, data: u32, op: u32, info: u32) -> usize;
 

@@ -1,14 +1,7 @@
 // TODO: use test core instead of this one.
 use crate::core::*;
-use crate::memory::*;
-
-/// Construct a word from bytes (high to low).
-const fn make_32(bytes: &[u8]) -> u32 {
-    ((bytes[3] as u32) << 24) |
-    ((bytes[2] as u32) << 16) |
-    ((bytes[1] as u32) << 8) |
-    (bytes[0] as u32)
-}
+use crate::core::armv4::*;
+use super::super::test_utils::*;
 
 struct TestARM4Core {
     regs: [u32; 16],
@@ -32,69 +25,6 @@ impl TestARM4Core {
     }
 }
 
-struct TestMem(Vec<u32>);
-
-impl TestMem {
-    fn new(size: usize) -> Self {
-        Self((0..size).map(|i| (i & 0xFF) as u8)
-            .collect::<Vec<_>>()
-            .chunks_exact(4)
-            .map(make_32)
-            .collect::<Vec<_>>()
-        )
-    }
-}
-
-impl Mem32 for TestMem {
-    type Addr = u32;
-
-    fn load_byte(&mut self, _cycle: MemCycleType, addr: Self::Addr) -> (u8, usize) {
-        let idx = (addr >> 2) as usize;
-        let data = self.0[idx];
-        let shift = (addr & 3) * 8;
-        let ret = (data >> shift) as u8;
-        (ret, 1)
-    }
-    fn store_byte(&mut self, _cycle: MemCycleType, addr: Self::Addr, data: u8) -> usize {
-        let idx = (addr >> 2) as usize;
-        let stored = self.0[idx];
-        let shift = (addr & 3) * 8;
-        let mask = !(0xFF << shift);
-        self.0[idx] = (stored & mask) | ((data as u32) << shift);
-        1
-    }
-
-    fn load_halfword(&mut self, _cycle: MemCycleType, addr: Self::Addr) -> (u16, usize) {
-        let idx = (addr >> 2) as usize;
-        let data = self.0[idx];
-        let shift = (addr & 2) * 8;
-        let ret = (data >> shift) as u16;
-        (ret, 1)
-    }
-    fn store_halfword(&mut self, _cycle: MemCycleType, addr: Self::Addr, data: u16) -> usize {
-        let idx = (addr >> 2) as usize;
-        let stored = self.0[idx];
-        let shift = (addr & 2) * 8;
-        let mask = !(0xFFFF << shift);
-        self.0[idx] = (stored & mask) | ((data as u32) << shift);
-        1
-    }
-
-    fn load_word(&mut self, _cycle: MemCycleType, addr: Self::Addr) -> (u32, usize) {
-        let idx = (addr >> 2) as usize;
-        (self.0[idx], 1)
-    }
-    fn store_word(&mut self, _cycle: MemCycleType, addr: Self::Addr, data: u32) -> usize {
-        let idx = (addr >> 2) as usize;
-        self.0[idx] = data;
-        1
-    }
-
-    fn clock(&mut self, _cycles: usize) -> Option<crate::ExternalException> {
-        None
-    }
-}
-
 impl ARMCore<TestMem> for TestARM4Core {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
@@ -102,23 +32,16 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn write_reg(&mut self, n: usize, data: u32) {
         self.regs[n] = data;
     }
-    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
-        &mut self.regs
-    }
+
     fn do_branch(&mut self, dest: u32) {
         self.regs[15] = dest;
     }
     fn call_subroutine(&mut self, _dest: u32) {
         // TODO
     }
-    fn jit_call_subroutine(&mut self, dest: u32) {
-        self.call_subroutine(dest);
-    }
+
     fn clock(&mut self, _cycles: usize) {
 
-    }
-    fn jit_clock(&mut self, cycles: usize) {
-        self.clock(cycles);
     }
 
     fn read_usr_reg(&self, n: usize) -> u32 {
@@ -175,11 +98,11 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn ref_mem<'a>(&'a self) -> &'a TestMem {
         &self.memory
     }
-    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut TestMem {
+    fn mut_mem<'a>(&'a mut self) -> &'a mut TestMem {
         &mut self.memory
     }
 
-    fn ref_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut CoprocImpl> {
+    fn mut_coproc<'a>(&'a mut self, _coproc: usize) -> Option<&'a mut dyn CoprocV4> {
         None
     }
 }
@@ -205,7 +128,7 @@ impl TestIn {
             cpu.cpsr = init_flags;
         }
         
-        let instr = decode_arm_v4(self.instr);
+        let instr = decode_arm(self.instr);
         let cycles = instr.execute(&mut cpu);
 
         for (i, val) in out.regs.iter().enumerate() {

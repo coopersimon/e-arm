@@ -1,20 +1,28 @@
 /// Core traits and types for ARM processors (data access).
 
-mod armv4;
+pub mod armv4;
+pub mod armv5;
+pub mod decode;
 mod jit;
+
+#[allow(dead_code)]
+mod test_utils;
 
 use std::fmt;
 use bitflags::bitflags;
 use crate::common::u32::{bit, bits};
-use crate::coproc::CoprocImpl;
 use crate::memory::{Mem32, MemCycleType};
+use crate::armv4::CoprocV4;
 
 pub use jit::*;
 
-pub use armv4::instructions::ARMv4Instruction;
-pub use armv4::decode::*;
-pub use armv4::execute::ARMv4;
-pub use armv4::compile::ARMv4Compiler;
+pub use decode::*;
+
+pub use armv5::{
+    instructions::ARMv5Instruction,
+    execute::ARMv5,
+    coproc::*
+};
 
 pub mod constants {
     pub const SP_REG: usize = 13;
@@ -35,6 +43,7 @@ bitflags! {
         const Z = bit(30);      // Zero
         const C = bit(29);      // Carry
         const V = bit(28);      // Overflow
+        const Q = bit(27);      // Sticky overflow / Saturate (ARMv5)
 
         const BLI = bit(8);     // Temporary I stack for Thumb BLs
         const I = bit(7);       // IRQs disabled
@@ -95,8 +104,6 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// Can only access registers available in the current mode.
     fn write_reg(&mut self, n: usize, data: u32);
-    /// Get a reference to all of the registers.
-    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32];
 
     /// Directly modify the PC.
     /// 
@@ -105,19 +112,12 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     fn do_branch(&mut self, dest: u32);
     /// Call a subroutine.
     /// 
-    /// This is the entry point for JIT compiled code.
+    /// This is the entry point for JIT compiled code,
+    /// on compatible processors.
     fn call_subroutine(&mut self, dest: u32);
-    /// Call a subroutine from JIT.
-    /// 
-    /// This should ONLY be called from inside JIT compiled code.
-    fn jit_call_subroutine(&mut self, dest: u32);
 
     /// Clock and handle interrupts.
     fn clock(&mut self, cycles: usize);
-    /// Clock and handle interrupts from JIT.
-    /// 
-    /// This should ONLY be called from inside JIT compiled code.
-    fn jit_clock(&mut self, cycles: usize);
 
     /// For STM when force usr-reg access.
     fn read_usr_reg(&self, n: usize) -> u32;
@@ -156,40 +156,40 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Reference the memory bus immutably.
     fn ref_mem<'a>(&'a self) -> &'a M;
     /// Reference the memory bus mutably.
-    fn ref_mem_mut<'a>(&'a mut self) -> &'a mut M;
+    fn mut_mem<'a>(&'a mut self) -> &'a mut M;
     /// Reference a coprocessor mutably.
-    fn ref_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut CoprocImpl>;
+    fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV4>;
 
     // Memory
     fn load_byte(&mut self, cycle: MemCycleType, addr: u32) -> (u8, usize) {
-        self.ref_mem_mut().load_byte(cycle, addr)
+        self.mut_mem().load_byte(cycle, addr)
     }
     fn store_byte(&mut self, cycle: MemCycleType, addr: u32, data: u8) -> usize {
-        self.ref_mem_mut().store_byte(cycle, addr, data)
+        self.mut_mem().store_byte(cycle, addr, data)
     }
     /// Load a halfword, force aligning the address and rotating the result.
     fn load_halfword(&mut self, cycle: MemCycleType, addr: u32) -> (u16, usize) {
-        let (data, cycles) = self.ref_mem_mut().load_halfword(cycle, addr & 0xFFFF_FFFE);
+        let (data, cycles) = self.mut_mem().load_halfword(cycle, addr & 0xFFFF_FFFE);
         (data.rotate_right((addr & 1) * 8), cycles)
     }
     /// Store a halfword, force aligning the address.
     fn store_halfword(&mut self, cycle: MemCycleType, addr: u32, data: u16) -> usize {
-        self.ref_mem_mut().store_halfword(cycle, addr & 0xFFFF_FFFE, data)
+        self.mut_mem().store_halfword(cycle, addr & 0xFFFF_FFFE, data)
     }
     /// Load a halfword, force aligning the address and rotating the result.
     fn load_word(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
-        let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
+        let (data, cycles) = self.mut_mem().load_word(cycle, addr & 0xFFFF_FFFC);
         (data.rotate_right((addr & 3) * 8), cycles)
     }
     /// Load a word, force aligning the address.
     /// Used for load multiple.
     fn load_word_force_align(&mut self, cycle: MemCycleType, addr: u32) -> (u32, usize) {
-        let (data, cycles) = self.ref_mem_mut().load_word(cycle, addr & 0xFFFF_FFFC);
+        let (data, cycles) = self.mut_mem().load_word(cycle, addr & 0xFFFF_FFFC);
         (data, cycles)
     }
     /// Store a word, force aligning the address.
     fn store_word(&mut self, cycle: MemCycleType, addr: u32, data: u32) -> usize {
-        self.ref_mem_mut().store_word(cycle, addr & 0xFFFF_FFFC, data)
+        self.mut_mem().store_word(cycle, addr & 0xFFFF_FFFC, data)
     }
 }
 
@@ -201,7 +201,7 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 pub type SwiHook<M> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
 
 /// ARM condition codes.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum ARMCondition {
     EQ, // Z set
     NE, // Z clear
@@ -218,6 +218,7 @@ pub enum ARMCondition {
     GT, // Z clear and (N xnor V)
     LE, // Z set or (N xor V)
     AL, // Always
+    NV, // Never (reserved)
 }
 
 impl fmt::Display for ARMCondition {
@@ -238,7 +239,7 @@ impl fmt::Display for ARMCondition {
             LT => write!(f, "LT"),
             GT => write!(f, "GT"),
             LE => write!(f, "LE"),
-            AL => write!(f, ""),
+            AL | NV => write!(f, ""),
         }
     }
 }
@@ -279,7 +280,7 @@ impl ARMCondition {
                 let cpsr = core.read_cpsr();
                 cpsr.contains(CPSR::Z) || (cpsr.contains(CPSR::N) != cpsr.contains(CPSR::V))
             },
-            AL => true,
+            AL | NV => true,
         }
     }
 }

@@ -1,12 +1,14 @@
-/// ARM7TDMI processor.
+/// ARM9E-S processor.
 
 use crate::core::{
     constants::*, Mode, CPSR, SPSR, SwiHook,
-    ARMCore, ARMCoreJIT,
+    ARMCore,
     armv4::{
-        ARMv4, ARMv4Compiler, CoprocV4, CoprocV4Impl, decode_arm, decode_thumb,
+        ARMv4, CoprocV4
     },
-    Subroutine, JITObject, RUN_THRESHOLD
+    armv5::{
+        ARMCoreV5, ARMv5, CoprocV5, CoprocV5Impl, decode_arm, decode_thumb
+    }
 };
 use crate::common::u32;
 use crate::memory::{
@@ -14,31 +16,23 @@ use crate::memory::{
 };
 use crate::{
     ExternalException,
-    Debugger, CPUState
-};
-
-use std::{
-    rc::Rc,
-    collections::HashMap,
-    ops::Range
+    //Debugger, CPUState
 };
 
 const NUM_COPROCS: usize = 16;
 
-/// Builder class for the ARM7TDMI.
+/// Builder class for the ARM9.
 /// 
 /// Call `build` to finish building.
-pub struct ARM7TDMIBuilder<M: Mem32<Addr = u32>> {
+pub struct ARM9ESBuilder<M: Mem32<Addr = u32>> {
     mem:        Box<M>,
-    coproc:     [Option<CoprocV4Impl>; NUM_COPROCS],
+    coproc:     [Option<CoprocV5Impl>; NUM_COPROCS],
     swi_hook:   Option<SwiHook<M>>,
-    enable_jit: bool,
-    jit_ranges: Vec<Range<u32>>,
 }
 
-impl<M: Mem32<Addr = u32>> ARM7TDMIBuilder<M> {
-    pub fn build(self) -> ARM7TDMI<M> {
-        ARM7TDMI {
+impl<M: Mem32<Addr = u32>> ARM9ESBuilder<M> {
+    pub fn build(self) -> ARM9ES<M> {
+        ARM9ES {
             regs: [0; 16],
             fiq_regs: [0; 7],
             irq_regs: [0; 2],
@@ -60,15 +54,10 @@ impl<M: Mem32<Addr = u32>> ARM7TDMIBuilder<M> {
             fetched_instr: None,
             decoded_instr: None,
             fetch_type:    MemCycleType::N,
-
-            enable_jit:     self.enable_jit,
-            jit_ranges:     self.jit_ranges,
-            jit_cache:      HashMap::new(),
-            can_compile:    true,
         }
     }
 
-    pub fn add_coproc(mut self, coproc: CoprocV4Impl, at: usize) -> Self {
+    pub fn add_coproc(mut self, coproc: CoprocV5Impl, at: usize) -> Self {
         self.coproc[at] = Some(coproc);
         self
     }
@@ -77,18 +66,12 @@ impl<M: Mem32<Addr = u32>> ARM7TDMIBuilder<M> {
         self.swi_hook = Some(swi_hook);
         self
     }
-
-    pub fn enable_jit_in_ranges(mut self, ranges: Vec<Range<u32>>) -> Self {
-        self.enable_jit = true;
-        self.jit_ranges = ranges;
-        self
-    }
 }
 
-/// ARM7TDMI processor.
+/// ARM9xxE-S processor.
 /// 
-/// Implements ARMv4 instruction set, Thumb compatible.
-pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
+/// Implements ARMv5 instruction set, Thumb compatible.
+pub struct ARM9ES<M: Mem32<Addr = u32>> {
     regs: [u32; 16],
     fiq_regs: [u32; 7],
     irq_regs: [u32; 2],
@@ -104,33 +87,21 @@ pub struct ARM7TDMI<M: Mem32<Addr = u32>> {
     svc_spsr: SPSR,
 
     mem:        Box<M>,
-    coproc:     [Option<CoprocV4Impl>; NUM_COPROCS],
+    coproc:     [Option<CoprocV5Impl>; NUM_COPROCS],
     swi_hook:   Option<SwiHook<M>>,
     
     fetched_instr: Option<u32>,
     decoded_instr: Option<u32>,
     fetch_type:    MemCycleType,
-
-    enable_jit:     bool,
-    jit_ranges:     Vec<Range<u32>>,
-    jit_cache:      HashMap<u32, Subroutine<Self>>,
-    can_compile:    bool,
 }
 
-impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
-    pub fn new(mem: Box<M>) -> ARM7TDMIBuilder<M> {
-        ARM7TDMIBuilder {
+impl<M: Mem32<Addr = u32>> ARM9ES<M> {
+    pub fn new(mem: Box<M>) -> ARM9ESBuilder<M> {
+        ARM9ESBuilder {
             mem:        mem,
             coproc:     [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None],
             swi_hook:   None,
-            enable_jit: false,
-            jit_ranges: Vec::new(),
         }
-    }
-
-    /// Enable or disable JIT compilation.
-    pub fn enable_jit(&mut self, enable: bool) {
-        self.enable_jit = enable;
     }
 
     /// Advance a single instruction through the pipeline.
@@ -222,68 +193,9 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         self.decoded_instr = None;
         self.next_fetch_non_seq();
     }
-
-    fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
-        let compile = || {
-            for range in &self.jit_ranges {
-                if range.contains(&from) {
-                    return true;
-                }
-            }
-            false
-        };
-        if !compile() {
-            return Subroutine::CannotCompile;
-        }
-        let mut compiler = ARMv4Compiler::new();
-        let result = if self.cpsr.contains(CPSR::T) {
-            compiler.compile_thumb::<M, Self>(from, &mut self.mem)
-        } else {
-            compiler.compile_arm::<M, Self>(from, &mut self.mem)
-        };
-        match result {
-            Ok(s) => {
-                Subroutine::Compiled(s)
-            },
-            Err(_e) => {
-                Subroutine::CannotCompile
-            }
-        }
-    }
-
-    #[inline]
-    fn jit_lookup(&mut self, target: u32) -> Option<Rc<JITObject<Self>>> {
-        if self.enable_jit {
-            let subroutine = self.jit_cache.get(&target).cloned();
-            match subroutine {
-                None => {
-                    self.jit_cache.insert(target, Subroutine::Run(1));
-                    None
-                },
-                Some(Subroutine::Run(RUN_THRESHOLD)) => if self.can_compile {
-                    let jit_routine = self.jit_compile_subroutine(target);
-                    self.jit_cache.insert(target, jit_routine.clone());
-                    match jit_routine {
-                        Subroutine::Compiled(s) => Some(s),
-                        _ => None,
-                    }
-                } else {
-                    None
-                },
-                Some(Subroutine::Run(n)) => {
-                    self.jit_cache.insert(target, Subroutine::Run(n + 1));
-                    None
-                },
-                Some(Subroutine::CannotCompile) => None,
-                Some(Subroutine::Compiled(s)) => Some(s),
-            }
-        } else {
-            None
-        }
-    }
 }
 
-impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
+impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM9ES<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -301,16 +213,7 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.flush_pipeline();
     }
     fn call_subroutine(&mut self, dest: u32) {
-        match self.jit_lookup(dest) {
-            Some(subroutine) => {
-                subroutine.call(self);
-                self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
-                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
-            },
-            None => {
-                self.regs[PC_REG] = dest.wrapping_sub(self.cpsr.instr_size());
-            }
-        }
+        self.regs[PC_REG] = dest.wrapping_sub(self.cpsr.instr_size());
 
         self.flush_pipeline();
     }
@@ -503,97 +406,21 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
     fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV4> {
         match &mut self.coproc[coproc] {
+            Some(c) => Some(c.as_v4()),
+            None => None
+        }
+    }
+}
+
+impl<M: Mem32<Addr = u32>> ARMCoreV5 for ARM9ES<M> {
+    /// Reference a coprocessor mutably.
+    fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV5> {
+        match &mut self.coproc[coproc] {
             Some(c) => Some(c.as_mut()),
             None => None
         }
     }
 }
 
-impl<M: Mem32<Addr = u32>> ARMCoreJIT<M> for ARM7TDMI<M> {
-    fn mut_regs<'a>(&'a mut self) -> &'a mut [u32] {
-        &mut self.regs
-    }
-
-    fn jit_call_subroutine(&mut self, dest: u32) {
-        match self.jit_lookup(dest) {
-            Some(subroutine) => {
-                subroutine.call(self);
-                self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
-                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
-            },
-            None => {
-                // Need to spin up another interpreter.
-                self.flush_pipeline();
-                self.regs[PC_REG] = dest;
-                let return_location = self.regs[LINK_REG] & 0xFFFF_FFFE;
-                loop {
-                    self.step();
-                    if return_location == self.regs[PC_REG] {
-                        self.regs[PC_REG] -= self.cpsr.instr_size();
-                        break;
-                    }
-                }
-            }
-        }
-
-        self.flush_pipeline();
-    }
-
-    fn jit_clock(&mut self, cycles: usize) {
-        match self.mem.clock(cycles) {
-            Some(ExternalException::RST) => self.reset(),
-            Some(ExternalException::FIQ) => if !self.cpsr.contains(CPSR::F) {
-                self.fast_interrupt();
-                let return_location = self.regs[LINK_REG] - I_SIZE;
-                loop {
-                    self.step();
-                    if return_location == self.regs[PC_REG] {
-                        break;
-                    }
-                }
-            },
-            Some(ExternalException::IRQ) => if !self.cpsr.contains(CPSR::I) {
-                self.interrupt();
-                self.can_compile = false;
-                let return_location = self.regs[LINK_REG] - I_SIZE;
-                loop {
-                    self.step();
-                    if return_location == self.regs[PC_REG] {
-                        break;
-                    }
-                }
-                self.can_compile = true;
-            },
-            None => {}
-        }
-    }
-}
-
-impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
-
-impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
-    fn inspect_state(&mut self) -> CPUState {
-        let next_instr = if self.cpsr.contains(CPSR::T) {
-            self.mem.load_halfword(MemCycleType::N, self.regs[PC_REG]).0 as u32
-        } else {
-            self.mem.load_word(MemCycleType::N, self.regs[PC_REG]).0
-        };
-        let thumb_mode = self.cpsr.contains(CPSR::T);
-        let pipeline = if thumb_mode {[
-            Some(decode_thumb(next_instr as u16)),
-            self.fetched_instr.map(|i| decode_thumb(i as u16)),
-            self.decoded_instr.map(|i| decode_thumb(i as u16))
-        ]} else {[
-            Some(decode_arm(next_instr)),
-            self.fetched_instr.map(|i| decode_arm(i)),
-            self.decoded_instr.map(|i| decode_arm(i))
-        ]};
-        CPUState {
-            regs:   self.regs,
-            flags:  self.cpsr.bits(),
-            thumb_mode: thumb_mode,
-
-            pipeline: pipeline,
-        }
-    }
-}
+impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM9ES<M> {}
+impl<M: Mem32<Addr = u32>> ARMv5<M> for ARM9ES<M> {}
