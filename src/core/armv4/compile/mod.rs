@@ -1,5 +1,5 @@
 
-#[allow(dead_code)]
+#[allow(dead_code, unused_imports)]
 mod test;
 mod validate;
 mod codegen;

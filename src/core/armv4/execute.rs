@@ -29,7 +29,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Called when an undefined instruction is encountered.
     /// Returns the amount of additional cycles taken.
     fn undefined(&mut self) -> usize {
-        let pc = self.read_reg(PC_REG);
+        let pc = self.read_reg(PC_REG) - 8;
         let (val, _) = self.load_word(MemCycleType::S, pc);
         panic!("undefined: {:X} @ {:X}", val, pc);
         //self.undefined_exception();
