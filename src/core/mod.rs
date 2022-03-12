@@ -146,8 +146,8 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 
     /// If system calls are implemented in rust, this should be called.
     /// 
-    /// It will return the number of cycles taken if the SWI hook is available.
-    fn try_swi_hook(&mut self, comment: u32) -> Option<usize>;
+    /// Returns true if hook is present.
+    fn try_swi_hook(&mut self, comment: u32) -> bool;
 
     /// Called when the next fetch is from non-sequential memory.
     /// Usually called from store instructions.
@@ -197,8 +197,10 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
 /// 
 /// The first argument is the SWI comment. The second arg is the memory interface. The remaining args are r0-r3.
 /// 
-/// It returns the number of cycles taken, and new values for r0, r1, and r3.
-pub type SwiHook<M> = fn(u32, &mut M, u32, u32, u32, u32) -> (usize, u32, u32, u32);
+/// It will clock the memory internally.
+/// 
+/// It returns new values for r0, r1, and r3.
+pub type SwiHook<M> = fn(u32, &mut M, &[u32; 4]) -> [u32; 3];
 
 /// ARM condition codes.
 #[derive(Clone, Copy, PartialEq)]

@@ -19,18 +19,21 @@ use crate::{
     //Debugger, CPUState
 };
 
-const NUM_COPROCS: usize = 16;
+pub trait ARM9Mem: Mem32<Addr = u32> {
+    fn mut_cp15<'a>(&'a mut self) -> &'a mut dyn CoprocV5;
+}
+const NUM_COPROCS: usize = 15;
 
 /// Builder class for the ARM9.
 /// 
 /// Call `build` to finish building.
-pub struct ARM9ESBuilder<M: Mem32<Addr = u32>> {
+pub struct ARM9ESBuilder<M: ARM9Mem> {
     mem:        Box<M>,
     coproc:     [Option<CoprocV5Impl>; NUM_COPROCS],
     swi_hook:   Option<SwiHook<M>>,
 }
 
-impl<M: Mem32<Addr = u32>> ARM9ESBuilder<M> {
+impl<M: ARM9Mem> ARM9ESBuilder<M> {
     pub fn build(self) -> ARM9ES<M> {
         ARM9ES {
             regs: [0; 16],
@@ -71,7 +74,7 @@ impl<M: Mem32<Addr = u32>> ARM9ESBuilder<M> {
 /// ARM9xxE-S processor.
 /// 
 /// Implements ARMv5 instruction set, Thumb compatible.
-pub struct ARM9ES<M: Mem32<Addr = u32>> {
+pub struct ARM9ES<M: ARM9Mem> {
     regs: [u32; 16],
     fiq_regs: [u32; 7],
     irq_regs: [u32; 2],
@@ -95,11 +98,11 @@ pub struct ARM9ES<M: Mem32<Addr = u32>> {
     fetch_type:    MemCycleType,
 }
 
-impl<M: Mem32<Addr = u32>> ARM9ES<M> {
+impl<M: ARM9Mem> ARM9ES<M> {
     pub fn new(mem: Box<M>) -> ARM9ESBuilder<M> {
         ARM9ESBuilder {
             mem:        mem,
-            coproc:     [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None],
+            coproc:     [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None],
             swi_hook:   None,
         }
     }
@@ -195,7 +198,7 @@ impl<M: Mem32<Addr = u32>> ARM9ES<M> {
     }
 }
 
-impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM9ES<M> {
+impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn read_reg(&self, n: usize) -> u32 {
         self.regs[n]
     }
@@ -381,15 +384,17 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM9ES<M> {
         self.shadow_registers();
     }
 
-    fn try_swi_hook(&mut self, comment: u32) -> Option<usize> {
-        self.swi_hook.map(|hook| {
-            let (cycles, r0, r1, r3) = hook(comment, &mut self.mem, self.regs[0], self.regs[1], self.regs[2], self.regs[3]);
-            self.regs[0] = r0;
-            self.regs[1] = r1;
-            self.regs[3] = r3;
-
-            cycles
-        })
+    fn try_swi_hook(&mut self, comment: u32) -> bool {
+        if let Some(hook) = self.swi_hook {
+            use std::convert::TryInto;
+            let regs = hook(comment, &mut self.mem, self.regs[0..4].try_into().unwrap());
+            self.regs[0] = regs[0];
+            self.regs[1] = regs[1];
+            self.regs[3] = regs[2];
+            true
+        } else {
+            false
+        }
     }
 
     fn next_fetch_non_seq(&mut self) {
@@ -405,6 +410,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM9ES<M> {
     }
 
     fn mut_coproc<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV4> {
+        if coproc == 15 {
+            return Some(self.mem.mut_cp15().as_v4());
+        }
         match &mut self.coproc[coproc] {
             Some(c) => Some(c.as_v4()),
             None => None
@@ -412,9 +420,12 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM9ES<M> {
     }
 }
 
-impl<M: Mem32<Addr = u32>> ARMCoreV5 for ARM9ES<M> {
+impl<M: ARM9Mem> ARMCoreV5 for ARM9ES<M> {
     /// Reference a coprocessor mutably.
     fn mut_coproc_v5<'a>(&'a mut self, coproc: usize) -> Option<&'a mut dyn CoprocV5> {
+        if coproc == 15 {
+            return Some(self.mem.mut_cp15());
+        }
         match &mut self.coproc[coproc] {
             Some(c) => Some(c.as_mut()),
             None => None
@@ -422,5 +433,5 @@ impl<M: Mem32<Addr = u32>> ARMCoreV5 for ARM9ES<M> {
     }
 }
 
-impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM9ES<M> {}
-impl<M: Mem32<Addr = u32>> ARMv5<M> for ARM9ES<M> {}
+impl<M: ARM9Mem> ARMv4<M> for ARM9ES<M> {}
+impl<M: ARM9Mem> ARMv5<M> for ARM9ES<M> {}

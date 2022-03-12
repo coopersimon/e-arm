@@ -478,15 +478,17 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.shadow_registers();
     }
 
-    fn try_swi_hook(&mut self, comment: u32) -> Option<usize> {
-        self.swi_hook.map(|hook| {
-            let (cycles, r0, r1, r3) = hook(comment, &mut self.mem, self.regs[0], self.regs[1], self.regs[2], self.regs[3]);
-            self.regs[0] = r0;
-            self.regs[1] = r1;
-            self.regs[3] = r3;
-
-            cycles
-        })
+    fn try_swi_hook(&mut self, comment: u32) -> bool {
+        if let Some(hook) = self.swi_hook {
+            use std::convert::TryInto;
+            let regs = hook(comment, &mut self.mem, self.regs[0..4].try_into().unwrap());
+            self.regs[0] = regs[0];
+            self.regs[1] = regs[1];
+            self.regs[3] = regs[2];
+            true
+        } else {
+            false
+        }
     }
 
     fn next_fetch_non_seq(&mut self) {

@@ -18,12 +18,10 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// SWI
     /// Software interrupt
     fn swi(&mut self, comment: u32) -> usize {
-        if let Some(cycles) = self.try_swi_hook(comment) {
-            cycles
-        } else {
+        if !self.try_swi_hook(comment) {
             self.software_exception();
-            0
         }
+        0
     }
 
     /// Called when an undefined instruction is encountered.
