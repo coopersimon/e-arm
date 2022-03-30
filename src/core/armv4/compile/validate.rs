@@ -73,10 +73,10 @@ impl Validator {
             self.branches.remove(&self.current_addr);
             // Decode the next instruction.
             let (decoded, cycles) = if thumb {
-                let (i, cycles) = mem.load_halfword(MemCycleType::S, self.current_addr);
+                let (i, cycles) = mem.fetch_instr_halfword(MemCycleType::S, self.current_addr);
                 (decode_thumb(i), cycles)
             } else {
-                let (i, cycles) = mem.load_word(MemCycleType::S, self.current_addr);
+                let (i, cycles) = mem.fetch_instr_word(MemCycleType::S, self.current_addr);
                 (decode_arm(i), cycles)
             };
             //println!("Encountered i: {}", decoded);

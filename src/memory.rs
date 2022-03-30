@@ -22,6 +22,15 @@ pub enum MemCycleType {
 pub trait Mem32 {
     type Addr;
 
+    /// Fetch a thumb instruction.
+    fn fetch_instr_halfword(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u16, usize) {
+        self.load_halfword(cycle, addr)
+    }
+    /// Fetch an ARM instruction.
+    fn fetch_instr_word(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u32, usize) {
+        self.load_word(cycle, addr)
+    }
+
     fn load_byte(&mut self, cycle: MemCycleType, addr: Self::Addr) -> (u8, usize);
     fn store_byte(&mut self, cycle: MemCycleType, addr: Self::Addr, data: u8) -> usize;
 

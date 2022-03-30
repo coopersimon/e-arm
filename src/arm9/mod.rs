@@ -117,7 +117,7 @@ impl<M: ARM9Mem> ARM9ES<M> {
         let executing_instr = self.decoded_instr;
         let cycles = if self.cpsr.contains(CPSR::T) {
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.fetch_type, pc_next);
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_halfword(self.fetch_type, pc_next);
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
             self.fetched_instr = Some(new_fetched_instr as u32);
@@ -133,7 +133,7 @@ impl<M: ARM9Mem> ARM9ES<M> {
             fetch_cycles + execute_cycles
         } else {
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.fetch_type, pc_next);
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_word(self.fetch_type, pc_next);
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
             self.fetched_instr = Some(new_fetched_instr);

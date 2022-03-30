@@ -143,7 +143,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         let executing_instr = self.decoded_instr;
         let cycles = if self.cpsr.contains(CPSR::T) {
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_halfword(self.fetch_type, pc_next);
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_halfword(self.fetch_type, pc_next);
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
             self.fetched_instr = Some(new_fetched_instr as u32);
@@ -159,7 +159,7 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
             fetch_cycles + execute_cycles
         } else {
             // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.load_word(self.fetch_type, pc_next);
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_word(self.fetch_type, pc_next);
             // Shift the pipeline
             self.decoded_instr = self.fetched_instr;
             self.fetched_instr = Some(new_fetched_instr);
@@ -576,9 +576,9 @@ impl<M: Mem32<Addr = u32>> ARMv4<M> for ARM7TDMI<M> {}
 impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
     fn inspect_state(&mut self) -> CPUState {
         let next_instr = if self.cpsr.contains(CPSR::T) {
-            self.mem.load_halfword(MemCycleType::N, self.regs[PC_REG]).0 as u32
+            self.mem.fetch_instr_halfword(MemCycleType::N, self.regs[PC_REG]).0 as u32
         } else {
-            self.mem.load_word(MemCycleType::N, self.regs[PC_REG]).0
+            self.mem.fetch_instr_word(MemCycleType::N, self.regs[PC_REG]).0
         };
         let thumb_mode = self.cpsr.contains(CPSR::T);
         let pipeline = if thumb_mode {[
