@@ -4,12 +4,19 @@
 /// 
 /// Non-sequential operations occur with random memory transfers or branches.
 /// Sequential operations happen with normal instruction fetches and multi-transfers.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum MemCycleType {
     /// Sequential
     S,
     /// Non-sequential
     N
+}
+
+impl MemCycleType {
+    #[inline]
+    pub fn is_non_seq(self) -> bool {
+        self == MemCycleType::N
+    }
 }
 
 /// A 32-bit clockable memory interface.
