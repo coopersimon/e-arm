@@ -104,6 +104,8 @@ pub trait ARMDriver {
     /// however it may not always execute one.
     /// 
     /// Returns how many cycles passed.
+    /// 
+    /// Internally clocks the memory bus.
     fn step(&mut self) -> usize;
 }
 

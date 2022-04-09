@@ -233,16 +233,32 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     fn blxr(&mut self, reg: usize) -> usize {
         let reg_val = self.read_reg(reg);
         let mut cpsr = self.read_cpsr();
-        let src_i_size = cpsr.instr_size();
         cpsr.set(CPSR::T, u32::test_bit(reg_val, 0));
         self.write_flags(cpsr);
 
-        let current_pc = self.read_reg(PC_REG).wrapping_sub(src_i_size);
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
 
         let dest = reg_val & 0xFFFFFFFE;
         // Call into JIT cache.
-        self.call_subroutine(dest.wrapping_sub(src_i_size));
+        self.call_subroutine(dest);
+        0
+    }
+
+    /// Thumb BLX
+    /// Branch, link, and exchange - using register value
+    fn tblxr(&mut self, reg: usize) -> usize {
+        let reg_val = self.read_reg(reg);
+        let mut cpsr = self.read_cpsr();
+        cpsr.set(CPSR::T, u32::test_bit(reg_val, 0));
+        self.write_flags(cpsr);
+
+        let current_pc = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
+        self.write_reg(LINK_REG, current_pc | 1);
+
+        let dest = reg_val & 0xFFFFFFFE;
+        // Call into JIT cache.
+        self.call_subroutine(dest);
         0
     }
 
