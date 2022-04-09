@@ -35,7 +35,7 @@ pub struct ARM9ESBuilder<M: ARM9Mem> {
 
 impl<M: ARM9Mem> ARM9ESBuilder<M> {
     pub fn build(self) -> ARM9ES<M> {
-        ARM9ES {
+        let mut cpu = ARM9ES {
             regs: [0; 16],
             fiq_regs: [0; 7],
             irq_regs: [0; 2],
@@ -57,7 +57,9 @@ impl<M: ARM9Mem> ARM9ESBuilder<M> {
             fetched_instr: None,
             decoded_instr: None,
             fetch_type:    MemCycleType::N,
-        }
+        };
+        cpu.regs[PC_REG] = 0xFFFF_0000;
+        cpu
     }
 
     pub fn add_coproc(mut self, coproc: CoprocV5Impl, at: usize) -> Self {
