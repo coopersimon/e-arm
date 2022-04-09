@@ -8,7 +8,7 @@ mod debugger;
 mod common;
 
 pub use crate::core::{
-    ARMCore, ARMCoreJIT, CPSR, SwiHook
+    ARMDriver, ARMCore, ARMCoreJIT, CPSR, SwiHook
 };
 pub use crate::core::armv4 as armv4;
 pub use crate::core::armv5 as armv5;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 use crate::{
-    Mem32, MemCycleType, ExternalException, ARM7TDMI, ARMCore
+    Mem32, MemCycleType, ExternalException, ARM7TDMI, ARMDriver, ARMCore
 };
 
 #[allow(unused_macros)]

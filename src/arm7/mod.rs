@@ -2,7 +2,7 @@
 
 use crate::core::{
     constants::*, Mode, CPSR, SPSR, SwiHook,
-    ARMCore, ARMCoreJIT,
+    ARMDriver, ARMCore, ARMCoreJIT,
     armv4::{
         ARMv4, ARMv4Compiler, CoprocV4, CoprocV4Impl, decode_arm, decode_thumb,
     },
@@ -133,52 +133,6 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         self.enable_jit = enable;
     }
 
-    /// Advance a single instruction through the pipeline.
-    /// Will always fetch a new instruction,
-    /// however it may not always execute one.
-    /// 
-    /// Returns how many cycles passed.
-    pub fn step(&mut self) -> usize {
-        let pc_next = self.regs[PC_REG];
-        let executing_instr = self.decoded_instr;
-        let cycles = if self.cpsr.contains(CPSR::T) {
-            // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_halfword(self.fetch_type, pc_next);
-            // Shift the pipeline
-            self.decoded_instr = self.fetched_instr;
-            self.fetched_instr = Some(new_fetched_instr as u32);
-            // Execute the decoded instr.
-            let execute_cycles = if let Some(instr) = executing_instr {
-                let i = decode_thumb(instr as u16);
-                i.execute(self)
-            } else {
-                0
-            };
-            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(T_SIZE);
-            // Calc cycles
-            fetch_cycles + execute_cycles
-        } else {
-            // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_word(self.fetch_type, pc_next);
-            // Shift the pipeline
-            self.decoded_instr = self.fetched_instr;
-            self.fetched_instr = Some(new_fetched_instr);
-            // Execute the decoded instr.
-            let execute_cycles = if let Some(instr) = executing_instr {
-                let i = decode_arm(instr);
-                i.execute(self)
-            } else {
-                0
-            };
-            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(I_SIZE);
-            // Calc cycles
-            fetch_cycles + execute_cycles
-        };
-        self.fetch_type = MemCycleType::S;
-        self.clock(cycles);
-        cycles
-    }
-
     /// Shadow the registers of the processor.
     ///
     /// Call this both before and after setting cpsr.
@@ -280,6 +234,49 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
         } else {
             None
         }
+    }
+}
+
+impl<M: Mem32<Addr = u32>> ARMDriver for ARM7TDMI<M> {
+    fn step(&mut self) -> usize {
+        let pc_next = self.regs[PC_REG];
+        let executing_instr = self.decoded_instr;
+        let cycles = if self.cpsr.contains(CPSR::T) {
+            // Fetch the next instr.
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_halfword(self.fetch_type, pc_next);
+            // Shift the pipeline
+            self.decoded_instr = self.fetched_instr;
+            self.fetched_instr = Some(new_fetched_instr as u32);
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(instr) = executing_instr {
+                let i = decode_thumb(instr as u16);
+                i.execute(self)
+            } else {
+                0
+            };
+            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(T_SIZE);
+            // Calc cycles
+            fetch_cycles + execute_cycles
+        } else {
+            // Fetch the next instr.
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_word(self.fetch_type, pc_next);
+            // Shift the pipeline
+            self.decoded_instr = self.fetched_instr;
+            self.fetched_instr = Some(new_fetched_instr);
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(instr) = executing_instr {
+                let i = decode_arm(instr);
+                i.execute(self)
+            } else {
+                0
+            };
+            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(I_SIZE);
+            // Calc cycles
+            fetch_cycles + execute_cycles
+        };
+        self.fetch_type = MemCycleType::S;
+        self.clock(cycles);
+        cycles
     }
 }
 
@@ -582,13 +579,13 @@ impl<M: Mem32<Addr = u32>> Debugger for ARM7TDMI<M> {
         };
         let thumb_mode = self.cpsr.contains(CPSR::T);
         let pipeline = if thumb_mode {[
-            Some(decode_thumb(next_instr as u16)),
-            self.fetched_instr.map(|i| decode_thumb(i as u16)),
-            self.decoded_instr.map(|i| decode_thumb(i as u16))
+            Some(decode_thumb(next_instr as u16).into()),
+            self.fetched_instr.map(|i| decode_thumb(i as u16).into()),
+            self.decoded_instr.map(|i| decode_thumb(i as u16).into())
         ]} else {[
-            Some(decode_arm(next_instr)),
-            self.fetched_instr.map(|i| decode_arm(i)),
-            self.decoded_instr.map(|i| decode_arm(i))
+            Some(decode_arm(next_instr).into()),
+            self.fetched_instr.map(|i| decode_arm(i).into()),
+            self.decoded_instr.map(|i| decode_arm(i).into())
         ]};
         CPUState {
             regs:   self.regs,

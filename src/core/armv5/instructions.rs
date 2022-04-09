@@ -30,6 +30,15 @@ impl ARMv5Instruction {
     }
 }
 
+impl From<ARMv4Instruction> for ARMv5Instruction {
+    fn from(i: ARMv4Instruction) -> Self {
+        Self {
+            cond: i.cond,
+            instr: ARMv5InstructionType::ARMv4(i.instr)
+        }
+    }
+}
+
 impl From<ARMv4InstructionType> for ARMv5InstructionType {
     fn from(i: ARMv4InstructionType) -> Self {
         Self::ARMv4(i)

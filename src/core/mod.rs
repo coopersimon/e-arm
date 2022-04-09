@@ -95,6 +95,19 @@ impl CPSR {
 
 pub type SPSR = CPSR;
 
+/// Top-level ARM processor public use.
+/// 
+/// Call `step` in a loop to drive the ARM processor.
+pub trait ARMDriver {
+    /// Advance a single instruction through the pipeline.
+    /// Will always fetch a new instruction,
+    /// however it may not always execute one.
+    /// 
+    /// Returns how many cycles passed.
+    fn step(&mut self) -> usize;
+}
+
+/// Internal methods to access and modify internal ARM core.
 pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Read a single general purpose register.
     /// 

@@ -2,7 +2,7 @@
 
 use crate::core::{
     constants::*, Mode, CPSR, SPSR, SwiHook,
-    ARMCore,
+    ARMDriver, ARMCore,
     armv4::{
         ARMv4, CoprocV4
     },
@@ -16,7 +16,7 @@ use crate::memory::{
 };
 use crate::{
     ExternalException,
-    //Debugger, CPUState
+    Debugger, CPUState
 };
 
 pub trait ARM9Mem: Mem32<Addr = u32> {
@@ -107,52 +107,6 @@ impl<M: ARM9Mem> ARM9ES<M> {
         }
     }
 
-    /// Advance a single instruction through the pipeline.
-    /// Will always fetch a new instruction,
-    /// however it may not always execute one.
-    /// 
-    /// Returns how many cycles passed.
-    pub fn step(&mut self) -> usize {
-        let pc_next = self.regs[PC_REG];
-        let executing_instr = self.decoded_instr;
-        let cycles = if self.cpsr.contains(CPSR::T) {
-            // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_halfword(self.fetch_type, pc_next);
-            // Shift the pipeline
-            self.decoded_instr = self.fetched_instr;
-            self.fetched_instr = Some(new_fetched_instr as u32);
-            // Execute the decoded instr.
-            let execute_cycles = if let Some(instr) = executing_instr {
-                let i = decode_thumb(instr as u16);
-                i.execute(self)
-            } else {
-                0
-            };
-            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(T_SIZE);
-            // Calc cycles
-            fetch_cycles + execute_cycles
-        } else {
-            // Fetch the next instr.
-            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_word(self.fetch_type, pc_next);
-            // Shift the pipeline
-            self.decoded_instr = self.fetched_instr;
-            self.fetched_instr = Some(new_fetched_instr);
-            // Execute the decoded instr.
-            let execute_cycles = if let Some(instr) = executing_instr {
-                let i = decode_arm(instr);
-                i.execute(self)
-            } else {
-                0
-            };
-            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(I_SIZE);
-            // Calc cycles
-            fetch_cycles + execute_cycles
-        };
-        self.fetch_type = MemCycleType::S;
-        self.clock(cycles);
-        cycles
-    }
-
     /// Shadow the registers of the processor.
     ///
     /// Call this both before and after setting cpsr.
@@ -195,6 +149,54 @@ impl<M: ARM9Mem> ARM9ES<M> {
         self.fetched_instr = None;
         self.decoded_instr = None;
         self.next_fetch_non_seq();
+    }
+}
+
+impl<M: ARM9Mem> ARMDriver for ARM9ES<M> {
+    /// Advance a single instruction through the pipeline.
+    /// Will always fetch a new instruction,
+    /// however it may not always execute one.
+    /// 
+    /// Returns how many cycles passed.
+    fn step(&mut self) -> usize {
+        let pc_next = self.regs[PC_REG];
+        let executing_instr = self.decoded_instr;
+        let cycles = if self.cpsr.contains(CPSR::T) {
+            // Fetch the next instr.
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_halfword(self.fetch_type, pc_next);
+            // Shift the pipeline
+            self.decoded_instr = self.fetched_instr;
+            self.fetched_instr = Some(new_fetched_instr as u32);
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(instr) = executing_instr {
+                let i = decode_thumb(instr as u16);
+                i.execute(self)
+            } else {
+                0
+            };
+            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(T_SIZE);
+            // Calc cycles
+            fetch_cycles + execute_cycles
+        } else {
+            // Fetch the next instr.
+            let (new_fetched_instr, fetch_cycles) = self.mem.fetch_instr_word(self.fetch_type, pc_next);
+            // Shift the pipeline
+            self.decoded_instr = self.fetched_instr;
+            self.fetched_instr = Some(new_fetched_instr);
+            // Execute the decoded instr.
+            let execute_cycles = if let Some(instr) = executing_instr {
+                let i = decode_arm(instr);
+                i.execute(self)
+            } else {
+                0
+            };
+            self.regs[PC_REG] = self.regs[PC_REG].wrapping_add(I_SIZE);
+            // Calc cycles
+            fetch_cycles + execute_cycles
+        };
+        self.fetch_type = MemCycleType::S;
+        self.clock(cycles);
+        cycles
     }
 }
 
@@ -295,7 +297,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn reset(&mut self) {
         self.shadow_registers();
         self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-        self.regs[PC_REG] = 0x0000_0000;
+        self.regs[PC_REG] = 0xFFFF_0000;
         self.svc_spsr = self.cpsr;
 
         self.cpsr.set_mode(Mode::SVC);
@@ -308,7 +310,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn interrupt(&mut self) {
         self.shadow_registers();
         self.irq_regs[1] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
-        self.regs[PC_REG] = 0x0000_0018;
+        self.regs[PC_REG] = 0xFFFF_0018;
         self.irq_spsr = self.cpsr;
 
         self.cpsr.set_mode(Mode::IRQ);
@@ -321,7 +323,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn fast_interrupt(&mut self) {
         self.shadow_registers();
         self.fiq_regs[6] = self.regs[PC_REG] - if self.cpsr.contains(CPSR::T) {0} else {I_SIZE};
-        self.regs[PC_REG] = 0x0000_001C;
+        self.regs[PC_REG] = 0xFFFF_001C;
         self.fiq_spsr = self.cpsr;
 
         self.cpsr.set_mode(Mode::FIQ);
@@ -334,7 +336,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn software_exception(&mut self) {
         self.shadow_registers();
         self.svc_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-        self.regs[PC_REG] = 0x0000_0008 - self.cpsr.instr_size();
+        self.regs[PC_REG] = 0xFFFF_0008 - self.cpsr.instr_size();
         self.svc_spsr = self.cpsr;
 
         self.cpsr.set_mode(Mode::SVC);
@@ -347,7 +349,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn undefined_exception(&mut self) {
         self.shadow_registers();
         self.und_regs[1] = self.regs[PC_REG] - self.cpsr.instr_size();
-        self.regs[PC_REG] = 0x0000_0004 - self.cpsr.instr_size();
+        self.regs[PC_REG] = 0xFFFF_0004 - self.cpsr.instr_size();
         self.und_spsr = self.cpsr;
 
         self.cpsr.set_mode(Mode::UND);
@@ -435,3 +437,30 @@ impl<M: ARM9Mem> ARMCoreV5 for ARM9ES<M> {
 
 impl<M: ARM9Mem> ARMv4<M> for ARM9ES<M> {}
 impl<M: ARM9Mem> ARMv5<M> for ARM9ES<M> {}
+
+impl<M: ARM9Mem> Debugger for ARM9ES<M> {
+    fn inspect_state(&mut self) -> CPUState {
+        let next_instr = if self.cpsr.contains(CPSR::T) {
+            self.mem.fetch_instr_halfword(MemCycleType::N, self.regs[PC_REG]).0 as u32
+        } else {
+            self.mem.fetch_instr_word(MemCycleType::N, self.regs[PC_REG]).0
+        };
+        let thumb_mode = self.cpsr.contains(CPSR::T);
+        let pipeline = if thumb_mode {[
+            Some(decode_thumb(next_instr as u16)),
+            self.fetched_instr.map(|i| decode_thumb(i as u16)),
+            self.decoded_instr.map(|i| decode_thumb(i as u16))
+        ]} else {[
+            Some(decode_arm(next_instr)),
+            self.fetched_instr.map(|i| decode_arm(i)),
+            self.decoded_instr.map(|i| decode_arm(i))
+        ]};
+        CPUState {
+            regs:   self.regs,
+            flags:  self.cpsr.bits(),
+            thumb_mode: thumb_mode,
+
+            pipeline: pipeline,
+        }
+    }
+}
