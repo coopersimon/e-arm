@@ -29,7 +29,7 @@ pub fn decode_thumb(i: u16) -> ARMv5Instruction {
         TRANSFER_EXT => decode_thumb_transfer_ext(i).into(),
         STACK =>        decode_thumb_stack(i),
         OTHER_HI =>     return decode_thumb_other_hi(i),
-        BRANCH =>       decode_thumb_branch(i).into(),
+        BRANCH =>       decode_thumb_branch(i),
         _ => unreachable!(),
     };
     ARMv5Instruction{cond: ARMCondition::AL, instr}
@@ -345,7 +345,7 @@ fn decode_thumb_transfer_mul(i: u16) -> ARMv4InstructionType {
 }
 
 /// Decode branches
-fn decode_thumb_branch(i: u16) -> ARMv4InstructionType {
+fn decode_thumb_branch(i: u16) -> ARMv5InstructionType {
     match (i & bits(11, 12)) >> 11 {
         0b00 => {   // B
             let mut offset_imm = (i & bits(0, 10)) * 2;
@@ -353,20 +353,23 @@ fn decode_thumb_branch(i: u16) -> ARMv4InstructionType {
                 offset_imm |= bits(12, 15);
             }
             let offset = ((offset_imm as i16) as i32) as u32;
-            ARMv4InstructionType::TB{offset}
+            ARMv4InstructionType::TB{offset}.into()
         },
-        0b01 => ARMv4InstructionType::UND,
+        0b01 => {   // BLX
+            let offset = ((i & bits(0, 10)) * 2) as u32;
+            ARMv5InstructionType::TBLXHI{offset}
+        },
         0b10 => {   // Long branch
             let mut offset_imm = i & bits(0, 10);
             if test_bit(offset_imm, 10) {
                 offset_imm |= bits(11, 15);
             }
             let offset = ((offset_imm as i16) as i32) as u32;
-            ARMv4InstructionType::TBLLO{offset: offset << 12}
+            ARMv4InstructionType::TBLLO{offset: offset << 12}.into()
         },
         0b11 => {   // BL
             let offset = ((i & bits(0, 10)) * 2) as u32;
-            ARMv4InstructionType::TBLHI{offset}
+            ARMv4InstructionType::TBLHI{offset}.into()
         },
         _ => unreachable!()
     }

@@ -224,7 +224,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         self.write_flags(cpsr);
 
         // Call into JIT cache.
-        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset));
+        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset), I_SIZE);
         0
     }
 
@@ -241,7 +241,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
 
         let dest = reg_val & 0xFFFFFFFE;
         // Call into JIT cache.
-        self.call_subroutine(dest);
+        self.call_subroutine(dest, I_SIZE);
         0
     }
 
@@ -258,7 +258,23 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
 
         let dest = reg_val & 0xFFFFFFFE;
         // Call into JIT cache.
-        self.call_subroutine(dest);
+        self.call_subroutine(dest, T_SIZE);
+        0
+    }
+
+    /// Thumb BLX (high halfword)
+    /// Branch, link, and exchange. Second part of two instructions.
+    fn tblx_hi(&mut self, offset: u32) -> usize {
+        let return_addr = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
+        let dest = self.read_reg(LINK_REG).wrapping_add(offset);
+        self.write_reg(LINK_REG, return_addr | 1);
+        // We must re-enable interrupts if they were enabled before.
+        let mut cpsr = self.read_cpsr();
+        cpsr.set(CPSR::I, cpsr.contains(CPSR::BLI));
+        cpsr.remove(CPSR::BLI | CPSR::T);   // Also clear T flag.
+        self.write_cpsr(cpsr);
+        // Call into JIT cache.
+        self.call_subroutine(dest & 0xFFFF_FFFC, T_SIZE);
         0
     }
 

@@ -297,15 +297,15 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
     }
-    fn call_subroutine(&mut self, dest: u32) {
+    fn call_subroutine(&mut self, dest: u32, i_size_offset: u32) {
         match self.jit_lookup(dest) {
             Some(subroutine) => {
                 subroutine.call(self);
                 self.cpsr.set(CPSR::T, u32::test_bit(self.regs[PC_REG], 0));
-                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - self.cpsr.instr_size();
+                self.regs[PC_REG] = (self.regs[PC_REG] & 0xFFFF_FFFE) - i_size_offset;
             },
             None => {
-                self.regs[PC_REG] = dest.wrapping_sub(self.cpsr.instr_size());
+                self.regs[PC_REG] = dest.wrapping_sub(i_size_offset);
             }
         }
 

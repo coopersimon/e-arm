@@ -129,7 +129,10 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// This is the entry point for JIT compiled code,
     /// on compatible processors.
-    fn call_subroutine(&mut self, dest: u32);
+    /// 
+    /// The `i_size_offset` should be set to the callee's i_size.
+    /// This way the addrs can be adjusted for the auto PC increment.
+    fn call_subroutine(&mut self, dest: u32, i_size_offset: u32);
 
     /// Clock and handle interrupts.
     fn clock(&mut self, cycles: usize);

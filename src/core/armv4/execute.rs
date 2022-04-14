@@ -515,7 +515,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
         // Call into JIT cache.
-        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset));
+        self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset), I_SIZE);
         0
     }
 
@@ -559,7 +559,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         cpsr.remove(CPSR::BLI);
         self.write_cpsr(cpsr);
         // Call into JIT cache.
-        self.call_subroutine(dest);
+        self.call_subroutine(dest, T_SIZE);
         0
     }
 

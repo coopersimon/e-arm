@@ -64,6 +64,7 @@ pub enum ARMv5InstructionType {
     BLXR{reg: usize},
     /// Thumb BLX
     TBLXR{reg: usize},
+    TBLXHI{offset: u32},
     // Transfer
     PLD{transfer_params: TransferParams, offset: ShiftOperand},
     LDRD{transfer_params: TransferParams, data_reg: usize, offset: OpData},
@@ -106,6 +107,7 @@ impl ARMv5InstructionType {
             BLXI{offset} => core.blxi(offset),
             BLXR{reg} => core.blxr(reg),
             TBLXR{reg} => core.tblxr(reg),
+            TBLXHI{offset} => core.tblx_hi(offset),
             // Transfer
             PLD{transfer_params, offset} => core.pld(transfer_params, offset),
             LDRD{transfer_params, data_reg, offset} => core.ldrd(transfer_params, data_reg, offset),
@@ -146,6 +148,7 @@ impl fmt::Display for ARMv5Instruction {
             // Branch
             BLXI{offset} => write!(f, "BLX #{:X}", offset),
             BLXR{reg} | TBLXR{reg} => write!(f, "BLX{} R{}", self.cond, reg),
+            TBLXHI{offset} => write!(f, "BLX #{:X}", offset),
             // Transfer
             PLD{offset, ..} => write!(f, "PLD {}", offset),
             LDRD{transfer_params, data_reg, offset} => write!(f, "LDR{}D R{},{}", self.cond, data_reg, transfer_params.so(offset)),

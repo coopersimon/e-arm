@@ -249,8 +249,8 @@ impl fmt::Display for ARMv4Instruction {
             B{offset} => write!(f, "B{} #{:X}", self.cond, offset),
             TB{offset} => write!(f, "B{} #{:X}", self.cond, offset),
             BL{offset} => write!(f, "BL{} #{:X}", self.cond, offset),
-            TBLLO{offset} => write!(f, "BL{} #{:X}", self.cond, offset),
-            TBLHI{offset} => write!(f, "BL{} #{:X}", self.cond, offset),
+            TBLLO{offset} => write!(f, "BL #{:X}", offset),
+            TBLHI{offset} => write!(f, "BL #{:X}", offset),
             BX{reg} => write!(f, "BX{} R{}", self.cond, reg),
 
             SWP{rn, rd, rm} => write!(f, "SWP{} R{},R{},[R{}]", self.cond, rd, rm, rn),

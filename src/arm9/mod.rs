@@ -219,8 +219,8 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
         self.regs[PC_REG] = dest;
         self.flush_pipeline();
     }
-    fn call_subroutine(&mut self, dest: u32) {
-        self.regs[PC_REG] = dest.wrapping_sub(self.cpsr.instr_size());
+    fn call_subroutine(&mut self, dest: u32, i_size_offset: u32) {
+        self.regs[PC_REG] = dest.wrapping_sub(i_size_offset);
 
         self.flush_pipeline();
     }
