@@ -149,7 +149,7 @@ fn decode_thumb_hi_reg_ops(i: u16) -> ARMv5InstructionType {
         0b01 => ARMv4InstructionType::CMP{rn: rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs))}.into(),
         0b10 => ARMv4InstructionType::MOV{rd, op2: ALUOperand::Normal(ShiftOperand::Register(rs)), set_flags: false}.into(),
         0b11 => if test_bit(i, 7) {
-            ARMv5InstructionType::BLXR{reg: rs}
+            ARMv5InstructionType::TBLXR{reg: rs}
         } else {
             ARMv4InstructionType::BX{reg: rs}.into()
         },
