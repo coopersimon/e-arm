@@ -599,7 +599,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let reg_data = self.read_reg(rm);
         let (mem_data, load_cycles) = self.load_word(MemCycleType::N, addr);
         let store_cycles = self.store_word(MemCycleType::N, addr, reg_data);
-        self.write_reg(rd, mem_data);
+        self.writeback_reg(rd, mem_data);
         load_cycles + store_cycles + 1
     }
 
@@ -610,7 +610,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let reg_data = self.read_reg(rm);
         let (mem_data, load_cycles) = self.load_byte(MemCycleType::N, addr);
         let store_cycles = self.store_byte(MemCycleType::N, addr, reg_data as u8);
-        self.write_reg(rd, mem_data as u32);
+        self.writeback_reg(rd, mem_data as u32);
         load_cycles + store_cycles + 1
     }
 
@@ -631,7 +631,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         };
 
         let (data, cycles) = self.load_word(MemCycleType::N, transfer_addr);
-        self.write_reg(dest_reg, data);
+        self.writeback_reg(dest_reg, data);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
@@ -646,7 +646,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let base_addr = self.read_reg(PC_REG) & 0xFFFF_FFFC;
         let transfer_addr = base_addr.wrapping_add(offset);
         let (data, cycles) = self.load_word(MemCycleType::N, transfer_addr);
-        self.write_reg(dest_reg, data);
+        self.writeback_reg(dest_reg, data);
         cycles + 1
     }
 
@@ -667,7 +667,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         };
 
         let (data, cycles) = self.load_byte(MemCycleType::N, transfer_addr);
-        self.write_reg(dest_reg, data as u32);
+        self.writeback_reg(dest_reg, data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
@@ -758,7 +758,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         };
 
         let (data, cycles) = self.load_halfword(MemCycleType::N, transfer_addr);
-        self.write_reg(dest_reg, data as u32);
+        self.writeback_reg(dest_reg, data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
@@ -786,7 +786,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
 
         let (data, cycles) = self.load_byte(MemCycleType::N, transfer_addr);
         let signed_data = (data as i8) as i32;
-        self.write_reg(dest_reg, signed_data as u32);
+        self.writeback_reg(dest_reg, signed_data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
@@ -814,7 +814,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
 
         let (data, cycles) = self.load_halfword(MemCycleType::N, transfer_addr);
         let signed_data = (data as i16) as i32;
-        self.write_reg(dest_reg, signed_data as u32);
+        self.writeback_reg(dest_reg, signed_data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
@@ -887,7 +887,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
-                    self.write_reg(reg, data);
+                    self.writeback_reg(reg, data);
                 }
                 acc + cycles
             }) + 1
@@ -898,7 +898,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
-                    self.write_reg(reg, data);
+                    self.writeback_reg(reg, data);
                 }
                 transfer_addr += 4;
                 acc + cycles

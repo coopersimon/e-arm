@@ -292,6 +292,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.regs[n] = data;
         }
     }
+    fn writeback_reg(&mut self, n: usize, data: u32) {
+        self.write_reg(n, data);
+    }
 
     fn do_branch(&mut self, dest: u32) {
         self.regs[PC_REG] = dest;

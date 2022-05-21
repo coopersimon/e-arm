@@ -210,6 +210,15 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
         if n == PC_REG {
             let pc = data & 0xFFFF_FFFE;
             self.do_branch(pc.wrapping_sub(self.cpsr.instr_size()));
+        } else {
+            self.regs[n] = data;
+        }
+    }
+    fn writeback_reg(&mut self, n: usize, data: u32) {
+        // TODO: writeback cycle
+        if n == PC_REG {
+            let pc = data & 0xFFFF_FFFE;
+            self.do_branch(pc.wrapping_sub(self.cpsr.instr_size()));
             self.cpsr.set(CPSR::T, data & 1 == 1);
         } else {
             self.regs[n] = data;

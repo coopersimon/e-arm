@@ -119,6 +119,13 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// Can only access registers available in the current mode.
     fn write_reg(&mut self, n: usize, data: u32);
+    /// Write back a single general purpose register
+    /// after loading from memory.
+    /// 
+    /// Can only access registers available in the current mode.
+    /// 
+    /// Involves the writeback pipeline stage where supported.
+    fn writeback_reg(&mut self, n: usize, data: u32);
 
     /// Directly modify the PC.
     /// 
