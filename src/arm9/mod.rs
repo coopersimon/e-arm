@@ -210,6 +210,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
         if n == PC_REG {
             let pc = data & 0xFFFF_FFFE;
             self.do_branch(pc.wrapping_sub(self.cpsr.instr_size()));
+            self.cpsr.set(CPSR::T, data & 1 == 1);
         } else {
             self.regs[n] = data;
         }
@@ -241,6 +242,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn read_usr_reg(&self, n: usize) -> u32 {
         let mode = self.cpsr.mode();
         match n {
+            15 => panic!("cannot read from PC via write_usr_reg"),
             13..=14 if mode == Mode::IRQ => self.irq_regs[n - 13],
             13..=14 if mode == Mode::UND => self.und_regs[n - 13],
             13..=14 if mode == Mode::SVC => self.svc_regs[n - 13],
@@ -252,6 +254,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
     fn write_usr_reg(&mut self, n: usize, data: u32) {
         let mode = self.cpsr.mode();
         match n {
+            15 => panic!("cannot write to PC via write_usr_reg"),
             13..=14 if mode == Mode::IRQ => self.irq_regs[n - 13] = data,
             13..=14 if mode == Mode::UND => self.und_regs[n - 13] = data,
             13..=14 if mode == Mode::SVC => self.svc_regs[n - 13] = data,

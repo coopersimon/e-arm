@@ -884,9 +884,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 transfer_addr += 4;
                 let (data, cycles) = self.load_word_force_align(access_type, transfer_addr);
                 access_type = MemCycleType::S;
-                if reg == PC_REG {
-                    self.write_reg(reg, data & 0xFFFF_FFFE);
-                } else if load_from_user {
+                if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
                     self.write_reg(reg, data);
@@ -897,9 +895,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             (0..16).filter(|reg| test_bit(reg_list, *reg)).fold(0, |acc, reg| {
                 let (data, cycles) = self.load_word_force_align(access_type, transfer_addr);
                 access_type = MemCycleType::S;
-                if reg == PC_REG {
-                    self.write_reg(reg, data & 0xFFFF_FFFE);
-                } else if load_from_user {
+                if load_from_user {
                     self.write_usr_reg(reg, data);
                 } else {
                     self.write_reg(reg, data);
