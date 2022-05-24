@@ -147,18 +147,18 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// SMULxy
     /// Signed multiply halfword
     fn smulxy(&mut self, rd: usize, rm: usize, rs: usize, y: bool, x: bool) -> usize {
-        let op1 = if x {u32::hi(self.read_reg(rm))} else {u32::lo(self.read_reg(rm))} as u32;
-        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as u32;
+        let op1 = if x {u32::hi(self.read_reg(rm))} else {u32::lo(self.read_reg(rm))} as i16 as i32;
+        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as i16 as i32;
         let result = op1 * op2;
-        self.write_reg(rd, result);
+        self.write_reg(rd, result as u32);
         0
     }
 
     /// SMULWy
     /// Signed multiply halfword wide
     fn smulwy(&mut self, rd: usize, rm: usize, rs: usize, y: bool) -> usize {
-        let op1 = self.read_reg(rm) as u64;
-        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as u64;
+        let op1 = self.read_reg(rm) as i32 as i64;
+        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as i16 as i64;
         let result = op1 * op2;
         let result_32 = (result >> 16) as u32;
         self.write_reg(rd, result_32);
@@ -168,9 +168,9 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// SMLAxy
     /// Signed multiply halfword and accumulate
     fn smlaxy(&mut self, rd: usize, rm: usize, rs: usize, rn: usize, y: bool, x: bool) -> usize {
-        let op1 = if x {u32::hi(self.read_reg(rm))} else {u32::lo(self.read_reg(rm))} as u32;
-        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as u32;
-        let mul_result = (op1 * op2) as i32;
+        let op1 = if x {u32::hi(self.read_reg(rm))} else {u32::lo(self.read_reg(rm))} as i16 as i32;
+        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as i16 as i32;
+        let mul_result = op1 * op2;
         let (result, overflow) = mul_result.overflowing_add(self.read_reg(rn) as i32);
         if overflow {
             let mut cpsr = self.read_cpsr();
@@ -184,8 +184,8 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// SMLAWy
     /// Signed multiply halfword wide and accumulate
     fn smlawy(&mut self, rd: usize, rm: usize, rs: usize, rn: usize, y: bool) -> usize {
-        let op1 = self.read_reg(rm) as u64;
-        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as u64;
+        let op1 = self.read_reg(rm) as i32 as i64;
+        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as i16 as i64;
         let mul_result = op1 * op2;
         let mul_result_32 = (mul_result >> 16) as i32;
         let (result, overflow) = mul_result_32.overflowing_add(self.read_reg(rn) as i32);
@@ -201,11 +201,11 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// SMLALxy
     /// Signed multiply halfword and long accumulate
     fn smlalxy(&mut self, rd_hi: usize, rd_lo: usize, rm: usize, rs: usize, y: bool, x: bool) -> usize {
-        let op1 = if x {u32::hi(self.read_reg(rm))} else {u32::lo(self.read_reg(rm))} as u32;
-        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as u32;
+        let op1 = if x {u32::hi(self.read_reg(rm))} else {u32::lo(self.read_reg(rm))} as i16 as i32;
+        let op2 = if y {u32::hi(self.read_reg(rs))} else {u32::lo(self.read_reg(rs))} as i16 as i32;
         let mul_result = op1 * op2;
         let acc_op = u64::make(self.read_reg(rd_hi), self.read_reg(rd_lo));
-        let result = acc_op.wrapping_add(mul_result as u64);
+        let result = acc_op.wrapping_add(mul_result as u32 as u64);
         self.write_reg(rd_lo, u64::lo(result));
         self.write_reg(rd_hi, u64::hi(result));
         1

@@ -543,7 +543,7 @@ fn test_smulxy() {
                 instr: 0xE16002C1
             },
             TestOut {
-                regs: vec![Some(0xAAFDFDAA), Some(0x3434FEFE), Some(0xABAB1212)],
+                regs: vec![Some(0x0054FDAA), Some(0x3434FEFE), Some(0xABAB1212)],
                 cpsr: CPSR::Z,
                 cycles: 0,
             }
@@ -592,7 +592,7 @@ fn test_smlaxy() {
                 instr: 0xE1003281
             },
             TestOut {
-                regs: vec![Some(0xB319401D), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x12345678)],
+                regs: vec![Some(0x177F401D), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x12345678)],
                 cpsr: CPSR::default(),
                 cycles: 0,
             }
@@ -605,7 +605,20 @@ fn test_smlaxy() {
                 instr: 0xE10032A1
             },
             TestOut {
-                regs: vec![Some(0x6D5C2E83), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x5678ABCD)],
+                regs: vec![Some(0x4B3A2E83), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x5678ABCD)],
+                cpsr: CPSR::Q,
+                cycles: 0,
+            }
+        ),
+        (
+            // SMLATB R0, R1, R2, R3: Cond=AL, Rd=0, Rn=3, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0x2222EFEF, 0x4444ABAB, 0x80000000],
+                cpsr: None,
+                instr: 0xE10032A1
+            },
+            TestOut {
+                regs: vec![Some(0x74C182B6), Some(0x2222EFEF), Some(0x4444ABAB), Some(0x80000000)],
                 cpsr: CPSR::Q,
                 cycles: 0,
             }
@@ -618,8 +631,8 @@ fn test_smlaxy() {
                 instr: 0xE10032C1
             },
             TestOut {
-                regs: vec![Some(0x4A8E5352), Some(0x8989EFEF), Some(0xCDCDFFFF), Some(0x89ABCDEF)],
-                cpsr: CPSR::Q,
+                regs: vec![Some(0x8CD25352), Some(0x8989EFEF), Some(0xCDCDFFFF), Some(0x89ABCDEF)],
+                cpsr: CPSR::default(),
                 cycles: 0,
             }
         )
@@ -654,7 +667,7 @@ fn test_smulwy() {
                 instr: 0xE12002E1
             },
             TestOut {
-                regs: vec![Some(0xAB098764), Some(0xFEDCBA98), Some(0xABCD1234)],
+                regs: vec![Some(0x005FCCCC), Some(0xFEDCBA98), Some(0xABCD1234)],
                 cpsr: CPSR::default(),
                 cycles: 0,
             }
@@ -683,14 +696,27 @@ fn test_smlawy() {
             }
         ),
         (
-            // SMLAWT R0, R1, R2, R3: Cond=AL, Rd=0, Rn=2, Rs=2, Rm=1
+            // SMLAWT R0, R1, R2, R2: Cond=AL, Rd=0, Rn=2, Rs=2, Rm=1
             TestIn {
                 regs: vec![0x1, 0xFEDCBA98, 0xABCD1234],
                 cpsr: None,
                 instr: 0xE12022C1
             },
             TestOut {
-                regs: vec![Some(0x56D69998), Some(0xFEDCBA98), Some(0xABCD1234)],
+                regs: vec![Some(0xAC2CDF00), Some(0xFEDCBA98), Some(0xABCD1234)],
+                cpsr: CPSR::default(),
+                cycles: 0,
+            }
+        ),
+        (
+            // SMLAWT R0, R1, R2, R3: Cond=AL, Rd=0, Rn=3, Rs=2, Rm=1
+            TestIn {
+                regs: vec![0x1, 0xFEDCBA98, 0xABCD1234, 0x7FFFFFFF],
+                cpsr: None,
+                instr: 0xE12032C1
+            },
+            TestOut {
+                regs: vec![Some(0x805FCCCB), Some(0xFEDCBA98), Some(0xABCD1234), Some(0x7FFFFFFF)],
                 cpsr: CPSR::Q,
                 cycles: 0,
             }
