@@ -599,8 +599,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let reg_data = self.read_reg(rm);
         let (mem_data, load_cycles) = self.load_word(MemCycleType::N, addr);
         let store_cycles = self.store_word(MemCycleType::N, addr, reg_data);
-        self.writeback_reg(rd, mem_data);
-        load_cycles + store_cycles + 1
+        let writeback_cycles = self.writeback_reg(rd, mem_data);
+        load_cycles + store_cycles + writeback_cycles
     }
 
     /// SWPB
@@ -610,8 +610,8 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let reg_data = self.read_reg(rm);
         let (mem_data, load_cycles) = self.load_byte(MemCycleType::N, addr);
         let store_cycles = self.store_byte(MemCycleType::N, addr, reg_data as u8);
-        self.writeback_reg(rd, mem_data as u32);
-        load_cycles + store_cycles + 1
+        let writeback_cycles = self.writeback_reg(rd, mem_data as u32);
+        load_cycles + store_cycles + writeback_cycles
     }
 
     /// LDR
@@ -630,15 +630,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let (data, cycles) = self.load_word(MemCycleType::N, transfer_addr);
-        self.writeback_reg(dest_reg, data);
+        let (data, load_cycles) = self.load_word(MemCycleType::N, transfer_addr);
+        let writeback_cycles = self.writeback_reg(dest_reg, data);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
         }
 
-        // Loads take one extra internal cycle.
-        cycles + 1
+        load_cycles + writeback_cycles
     }
 
     /// Thumb LDR PC-relative
@@ -666,15 +665,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let (data, cycles) = self.load_byte(MemCycleType::N, transfer_addr);
-        self.writeback_reg(dest_reg, data as u32);
+        let (data, load_cycles) = self.load_byte(MemCycleType::N, transfer_addr);
+        let writeback_cycles = self.writeback_reg(dest_reg, data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
         }
 
-        // Loads take one extra internal cycle.
-        cycles + 1
+        load_cycles + writeback_cycles
     }
 
     /// STR
@@ -757,15 +755,14 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let (data, cycles) = self.load_halfword(MemCycleType::N, transfer_addr);
-        self.writeback_reg(dest_reg, data as u32);
+        let (data, load_cycles) = self.load_halfword(MemCycleType::N, transfer_addr);
+        let writeback_cycles = self.writeback_reg(dest_reg, data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
         }
 
-        // Loads take one extra internal cycle.
-        cycles + 1
+        load_cycles + writeback_cycles
     }
 
     /// LDRSB
@@ -784,16 +781,15 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let (data, cycles) = self.load_byte(MemCycleType::N, transfer_addr);
+        let (data, load_cycles) = self.load_byte(MemCycleType::N, transfer_addr);
         let signed_data = (data as i8) as i32;
-        self.writeback_reg(dest_reg, signed_data as u32);
+        let writeback_cycles = self.writeback_reg(dest_reg, signed_data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
         }
 
-        // Loads take one extra internal cycle.
-        cycles + 1
+        load_cycles + writeback_cycles
     }
 
     /// LDRSH
@@ -812,16 +808,15 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             base_addr   // Post
         };
 
-        let (data, cycles) = self.load_halfword(MemCycleType::N, transfer_addr);
+        let (data, load_cycles) = self.load_halfword(MemCycleType::N, transfer_addr);
         let signed_data = (data as i16) as i32;
-        self.writeback_reg(dest_reg, signed_data as u32);
+        let writeback_cycles = self.writeback_reg(dest_reg, signed_data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {
             self.write_reg(transfer_params.base_reg, offset_addr);
         }
 
-        // Loads take one extra internal cycle.
-        cycles + 1
+        load_cycles + writeback_cycles
     }
 
     /// STRH
@@ -890,7 +885,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                     self.writeback_reg(reg, data);
                 }
                 acc + cycles
-            }) + 1
+            }) + 1  // TODO: writeback cycles
         } else {
             (0..16).filter(|reg| test_bit(reg_list, *reg)).fold(0, |acc, reg| {
                 let (data, cycles) = self.load_word_force_align(access_type, transfer_addr);
@@ -902,7 +897,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
                 }
                 transfer_addr += 4;
                 acc + cycles
-            }) + 1
+            }) + 1  // TODO: writeback cycles
         };
 
         if transfer_params.writeback {

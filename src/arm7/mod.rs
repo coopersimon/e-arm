@@ -292,8 +292,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
             self.regs[n] = data;
         }
     }
-    fn writeback_reg(&mut self, n: usize, data: u32) {
+    fn writeback_reg(&mut self, n: usize, data: u32) -> usize {
         self.write_reg(n, data);
+        1
     }
 
     fn do_branch(&mut self, dest: u32) {
@@ -480,7 +481,6 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
 
     fn try_swi_hook(&mut self, comment: u32) -> bool {
         if let Some(hook) = self.swi_hook {
-            use std::convert::TryInto;
             let regs = hook(comment, &mut self.mem, self.regs[0..4].try_into().unwrap());
             self.regs[0] = regs[0];
             self.regs[1] = regs[1];

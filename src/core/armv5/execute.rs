@@ -303,9 +303,9 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
             base_addr   // Post
         };
 
-        let (data, cycles_lo) = self.load_word(MemCycleType::N, transfer_addr);
+        let (data, cycles_lo) = self.load_word_force_align(MemCycleType::N, transfer_addr);
         self.writeback_reg(dest_reg, data as u32);
-        let (data, cycles_hi) = self.load_word(MemCycleType::S, transfer_addr.wrapping_add(4));
+        let (data, cycles_hi) = self.load_word_force_align(MemCycleType::S, transfer_addr.wrapping_add(4));
         self.writeback_reg(dest_reg + 1, data as u32);
 
         if !transfer_params.pre_index || transfer_params.writeback {

@@ -124,8 +124,10 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// 
     /// Can only access registers available in the current mode.
     /// 
-    /// Involves the writeback pipeline stage where supported.
-    fn writeback_reg(&mut self, n: usize, data: u32);
+    /// Involves the writeback pipeline stage, and therefore may
+    /// take an extra cycle. Returns the number of immediate cycles
+    /// used.
+    fn writeback_reg(&mut self, n: usize, data: u32) -> usize;
 
     /// Directly modify the PC.
     /// 

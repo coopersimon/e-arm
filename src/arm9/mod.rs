@@ -214,8 +214,7 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
             self.regs[n] = data;
         }
     }
-    fn writeback_reg(&mut self, n: usize, data: u32) {
-        // TODO: writeback cycle
+    fn writeback_reg(&mut self, n: usize, data: u32) -> usize {
         if n == PC_REG {
             let pc = data & 0xFFFF_FFFE;
             self.do_branch(pc.wrapping_sub(self.cpsr.instr_size()));
@@ -223,6 +222,8 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
         } else {
             self.regs[n] = data;
         }
+        // TODO: note writeback reg + add cycle later.
+        0
     }
 
     fn do_branch(&mut self, dest: u32) {
@@ -402,7 +403,6 @@ impl<M: ARM9Mem> ARMCore<M> for ARM9ES<M> {
 
     fn try_swi_hook(&mut self, comment: u32) -> bool {
         if let Some(hook) = self.swi_hook {
-            use std::convert::TryInto;
             let regs = hook(comment, &mut self.mem, self.regs[0..4].try_into().unwrap());
             self.regs[0] = regs[0];
             self.regs[1] = regs[1];
