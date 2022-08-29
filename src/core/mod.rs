@@ -63,11 +63,7 @@ bitflags! {
 
 impl CPSR {
     fn carry(self) -> u32 {
-        if self.contains(CPSR::C) {
-            1
-        } else {
-            0
-        }
+        (self & CPSR::C).bits() >> 29
     }
 
     pub fn set_mode(&mut self, mode: Mode) {
@@ -87,9 +83,10 @@ impl CPSR {
         }
     }
 
-    pub fn instr_size(&self) -> u32 {
+    pub fn instr_size(self) -> u32 {
         use constants::*;
-        if self.contains(CPSR::T) {T_SIZE} else {I_SIZE}
+        let t = (self & CPSR::T).bits() >> 5;
+        I_SIZE >> t
     }
 }
 

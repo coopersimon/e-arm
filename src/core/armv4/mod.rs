@@ -29,23 +29,12 @@ pub fn decode_thumb(i: u16) -> ARMv4Instruction {
 /// If the most significant byte is all 0 or all 1, it can be reduced by 1 cycle.
 /// Continue for the 2nd and 3rd most significant bytes.
 const fn mul_cycles(op2: u32) -> usize {
-    let leading_zeros = op2.leading_zeros();
-    if leading_zeros == 0 {
-        let leading_ones = op2.leading_ones();
-        if leading_ones >= 24 {
-            1
-        } else if leading_ones >= 16 {
-            2
-        } else if leading_ones >= 8 {
-            3
-        } else {
-            4
-        }
-    } else if leading_zeros >= 24 {
+    let leading = op2.leading_zeros() | op2.leading_ones();
+    if leading >= 24 {
         1
-    } else if leading_zeros >= 16 {
+    } else if leading >= 16 {
         2
-    } else if leading_zeros >= 8 {
+    } else if leading >= 8 {
         3
     } else {
         4
