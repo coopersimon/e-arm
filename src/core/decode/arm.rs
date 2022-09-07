@@ -133,19 +133,13 @@ fn decode_branch(never: bool, i: u32) -> ARMv5InstructionType {
 
         if never {
             let halfword_offset = (i >> 23) & 2;
-            let offset = if test_bit(raw_offset, 23) {
-                (raw_offset | 0xFF000000) << 2
-            } else {
-                raw_offset << 2
-            } | halfword_offset;
+            let word_offset = ((raw_offset << 8) as i32) >> 6;
+            let offset = (word_offset as u32) | halfword_offset;
 
             ARMv5InstructionType::BLXI{offset}
         } else {
-            let offset = if test_bit(raw_offset, 23) {
-                (raw_offset | 0xFF000000) << 2
-            } else {
-                raw_offset << 2
-            };
+            let word_offset = ((raw_offset << 8) as i32) >> 6;
+            let offset = word_offset as u32;
     
             if test_bit(i, 24) {
                 ARMv4InstructionType::BL{offset}.into()
@@ -217,7 +211,9 @@ fn decode_transfer(never: bool, i: u32) -> ARMv5InstructionType {
 /// i has the value cccc00...
 fn decode_alu(i: u32) -> ARMv5InstructionType {
     // If bit 25 is 0, then bits 7 and 4 can determine if it's an extension instruction.
-    if !test_bit(i, 25) && test_bit(i, 7) && test_bit(i, 4) {   // TODO: optimise this check
+    const MASK: u32 = bit(25) | bit(7) | bit(4);
+    const SET_BITS: u32 = bit(7) | bit(4);
+    if (i & MASK) == SET_BITS {
         decode_other(i)
     } else {
         decode_data_proc(i)
@@ -396,6 +392,8 @@ fn decode_offset(i: u32) -> ShiftOperand {
     }
 }
 
+const EXT_MASK: u32 = bit(7) | bit(4);
+
 fn decode_data_proc_ext_00(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType {
     if rn == 0xF {
         if (i & 0xFFF) == 0 {
@@ -407,7 +405,7 @@ fn decode_data_proc_ext_00(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
         let rm = (i & 0xF) as usize;
         if i & 0xFF0 == 0x050 {
             ARMv5InstructionType::QADD{rd, rm, rn}
-        } else if test_bit(i, 7) && !test_bit(i, 4) {
+        } else if (i & EXT_MASK) == bit(7) {
             let rs = ((i >> 8) & 0xF) as usize;
             ARMv5InstructionType::SMLAxy{rd: rn, rs, rm, rn: rd, y: test_bit(i, 6), x: test_bit(i, 5)}
         } else {
@@ -423,7 +421,7 @@ fn decode_data_proc_ext_01(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
         let rm = (i & 0xF) as usize;
         if i & 0xFF0 == 0x050 {
             ARMv5InstructionType::QSUB{rd, rm, rn}
-        } else if test_bit(i, 7) && !test_bit(i, 4) {
+        } else if (i & EXT_MASK) == bit(7) {
             let rs = ((i >> 8) & 0xF) as usize;
             if test_bit(i, 5) {
                 ARMv5InstructionType::SMULWy{rd: rn, rs, rm, y: test_bit(i, 6)}
@@ -447,7 +445,7 @@ fn decode_data_proc_ext_10(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
         let rm = (i & 0xF) as usize;
         if i & 0xFF0 == 0x050 {
             ARMv5InstructionType::QDADD{rd, rm, rn}
-        } else if test_bit(i, 7) && !test_bit(i, 4) {
+        } else if (i & EXT_MASK) == bit(7) {
             let rs = ((i >> 8) & 0xF) as usize;
             ARMv5InstructionType::SMLALxy{rd_hi: rn, rd_lo: rd, rs, rm, y: test_bit(i, 6), x: test_bit(i, 5)}
         } else {
@@ -465,7 +463,7 @@ fn decode_data_proc_ext_11(i: u32, rn: usize, rd: usize) -> ARMv5InstructionType
             ARMv5InstructionType::QDSUB{rd, rm, rn}
         } else if i & 0xFF0 == 0xF10 {
             ARMv5InstructionType::CLZ{rd, rm}
-        } else if test_bit(i, 7) && !test_bit(i, 4) {
+        } else if (i & EXT_MASK) == bit(7) {
             let rs = ((i >> 8) & 0xF) as usize;
             ARMv5InstructionType::SMULxy{rd: rn, rs, rm, y: test_bit(i, 6), x: test_bit(i, 5)}
         } else {
