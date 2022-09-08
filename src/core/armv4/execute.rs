@@ -40,9 +40,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Logical shift left (fill with zeroes)
     fn lsl(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
         if set_carry && shift_amount != 0 {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::C, test_bit(val, (32 - shift_amount) as usize));
-            self.write_flags(cpsr);
+            let carry = (val << (shift_amount - 1)) & bit(31);
+            let flags = CPSR::from_bits_truncate(carry >> 2);
+            self.write_masked_flags(CPSR::C, flags);
         }
         val.wrapping_shl(shift_amount)
     }
@@ -51,9 +51,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Logical shift right (fill with zeroes)
     fn lsr(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
         if set_carry {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::C, test_bit(val, (shift_amount - 1) as usize));
-            self.write_flags(cpsr);
+            let carry = (val >> (shift_amount - 1)) & bit(0);
+            let flags = CPSR::from_bits_truncate(carry << 29);
+            self.write_masked_flags(CPSR::C, flags);
         }
         val.wrapping_shr(shift_amount)
     }
@@ -62,9 +62,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Logical shift right by 32 bits (fill with zeroes)
     fn lsr_32(&mut self, set_carry: bool, val: u32) -> u32 {
         if set_carry {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::C, test_bit(val, 31));
-            self.write_flags(cpsr);
+            let carry = val & bit(31);
+            let flags = CPSR::from_bits_truncate(carry >> 2);
+            self.write_masked_flags(CPSR::C, flags);
         }
         0
     }
@@ -73,9 +73,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Arithmetic shift right (sign-extend)
     fn asr(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
         if set_carry {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::C, test_bit(val, (shift_amount - 1) as usize));
-            self.write_flags(cpsr);
+            let carry = (val >> (shift_amount - 1)) & bit(0);
+            let flags = CPSR::from_bits_truncate(carry << 29);
+            self.write_masked_flags(CPSR::C, flags);
         }
         (val as i32).wrapping_shr(shift_amount) as u32
     }
@@ -84,9 +84,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Arithmetic shift right by 32 bits (sign-extend)
     fn asr_32(&mut self, set_carry: bool, val: u32) -> u32 {
         if set_carry {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::C, test_bit(val, 31));
-            self.write_flags(cpsr);
+            let carry = val & bit(31);
+            let flags = CPSR::from_bits_truncate(carry >> 2);
+            self.write_masked_flags(CPSR::C, flags);
         }
         (val as i32).wrapping_shr(31) as u32
     }
@@ -96,9 +96,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     fn ror(&mut self, set_carry: bool, val: u32, shift_amount: u32) -> u32 {
         let result = val.rotate_right(shift_amount);
         if set_carry {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::C, test_bit(result, 31));
-            self.write_flags(cpsr);
+            let carry = result & bit(31);
+            let flags = CPSR::from_bits_truncate(carry >> 2);
+            self.write_masked_flags(CPSR::C, flags);
         }
         result
     }
@@ -106,11 +106,12 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// RRX
     /// Rotate right with carry.
     fn rrx(&mut self, set_carry: bool, val: u32) -> u32 {
-        let mut cpsr = self.read_cpsr();
-        let carry = if cpsr.contains(CPSR::C) {bit(31)} else {0};
+        let carry = self.read_cpsr().carry() << 31;
+        //let carry = if cpsr.contains(CPSR::C) {bit(31)} else {0};
         if set_carry {
-            cpsr.set(CPSR::C, test_bit(val, 0));
-            self.write_flags(cpsr);
+            let carry = val & bit(0);
+            let flags = CPSR::from_bits_truncate(carry << 29);
+            self.write_masked_flags(CPSR::C, flags);
         }
         (val >> 1) | carry
     }
@@ -125,10 +126,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             if rd == PC_REG {
                 self.return_from_exception();
             } else {
-                let mut cpsr = self.read_cpsr();
-                cpsr.set(CPSR::N, test_bit(result, 31));
-                cpsr.set(CPSR::Z, result == 0);
-                self.write_flags(cpsr);
+                let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+                flags.set(CPSR::Z, result == 0);
+                self.write_masked_flags(CPSR::N | CPSR::Z, flags)
             }
         }
     }
@@ -197,10 +197,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let (op2, cycles) = self.eval_alu_op(op2, true);
         let op1 = self.read_reg(rn);
         let result = op1 & op2;
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::N, test_bit(result, 31));
-        cpsr.set(CPSR::Z, result == 0);
-        self.write_flags(cpsr);
+        let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+        flags.set(CPSR::Z, result == 0);
+        self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         cycles
     }
 
@@ -210,10 +209,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let (op2, cycles) = self.eval_alu_op(op2, true);
         let op1 = self.read_reg(rn);
         let result = op1 ^ op2;
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::N, test_bit(result, 31));
-        cpsr.set(CPSR::Z, result == 0);
-        self.write_flags(cpsr);
+        let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+        flags.set(CPSR::Z, result == 0);
+        self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         cycles
     }
 
@@ -223,12 +221,13 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let (op2, cycles) = self.eval_alu_op(op2, false);
         let op1 = self.read_reg(rn);
         let (result, overflow) = op1.overflowing_sub(op2);
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::N, test_bit(result, 31));
-        cpsr.set(CPSR::Z, result == 0);
-        cpsr.set(CPSR::C, !overflow);
-        cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
-        self.write_flags(cpsr);
+        //let mut cpsr = self.read_cpsr();
+        let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+        let v = (op1 ^ op2) & (op1 ^ result) & bit(31);
+        flags |= CPSR::from_bits_truncate(v >> 3);
+        flags.set(CPSR::Z, result == 0);
+        flags.set(CPSR::C, !overflow);
+        self.write_masked_flags(CPSR::N | CPSR::Z | CPSR::C | CPSR::V, flags);
         cycles
     }
 
@@ -238,12 +237,13 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let (op2, cycles) = self.eval_alu_op(op2, false);
         let op1 = self.read_reg(rn);
         let (result, overflow) = op1.overflowing_add(op2);
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::N, test_bit(result, 31));
-        cpsr.set(CPSR::Z, result == 0);
-        cpsr.set(CPSR::C, overflow);
-        cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-        self.write_flags(cpsr);
+        //let mut cpsr = self.read_cpsr();
+        let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+        let v = !(op1 ^ op2) & (op1 ^ result) & bit(31);
+        flags |= CPSR::from_bits_truncate(v >> 3);
+        flags.set(CPSR::Z, result == 0);
+        flags.set(CPSR::C, overflow);
+        self.write_masked_flags(CPSR::N | CPSR::Z | CPSR::C | CPSR::V, flags);
         cycles
     }
 
@@ -260,12 +260,12 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             if rd == PC_REG {
                 self.return_from_exception();
             } else {
-                let mut cpsr = self.read_cpsr();
-                cpsr.set(CPSR::N, test_bit(result, 31));
-                cpsr.set(CPSR::Z, result == 0);
-                cpsr.set(CPSR::C, overflow);
-                cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-                self.write_flags(cpsr);
+                let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+                let v = !(op1 ^ op2) & (op1 ^ result) & bit(31);
+                flags |= CPSR::from_bits_truncate(v >> 3);
+                flags.set(CPSR::Z, result == 0);
+                flags.set(CPSR::C, overflow);
+                self.write_masked_flags(CPSR::N | CPSR::Z | CPSR::C | CPSR::V, flags);
             }
         }
         cycles
@@ -291,12 +291,12 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             if rd == PC_REG {
                 self.return_from_exception();
             } else {
-                let mut cpsr = self.read_cpsr();
-                cpsr.set(CPSR::N, test_bit(result, 31));
-                cpsr.set(CPSR::Z, result == 0);
-                cpsr.set(CPSR::C, !overflow);
-                cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
-                self.write_flags(cpsr);
+                let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+                let v = (op1 ^ op2) & (op1 ^ result) & bit(31);
+                flags |= CPSR::from_bits_truncate(v >> 3);
+                flags.set(CPSR::Z, result == 0);
+                flags.set(CPSR::C, !overflow);
+                self.write_masked_flags(CPSR::N | CPSR::Z | CPSR::C | CPSR::V, flags);
             }
         }
         cycles
@@ -313,12 +313,12 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             if rd == PC_REG {
                 self.return_from_exception();
             } else {
-                let mut cpsr = self.read_cpsr();
-                cpsr.set(CPSR::N, test_bit(result, 31));
-                cpsr.set(CPSR::Z, result == 0);
-                cpsr.set(CPSR::C, !overflow);
-                cpsr.set(CPSR::V, test_bit((op1 ^ op2) & (op1 ^ result), 31));
-                self.write_flags(cpsr);
+                let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+                let v = (op1 ^ op2) & (op1 ^ result) & bit(31);
+                flags |= CPSR::from_bits_truncate(v >> 3);
+                flags.set(CPSR::Z, result == 0);
+                flags.set(CPSR::C, !overflow);
+                self.write_masked_flags(CPSR::N | CPSR::Z | CPSR::C | CPSR::V, flags);
             }
         }
         cycles
@@ -354,19 +354,19 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Do an arithmetic add / subtract with carry / borrow.
     /// Bitwise invert op2 to do subtract.
     fn arithmetic_carry(&mut self, s: bool, rd: usize, op1: u32, op2: u32) {
-        let mut cpsr = self.read_cpsr();
         let (r1, o1) = op1.overflowing_add(op2);
-        let (result, o2) = r1.overflowing_add(cpsr.carry());
+        let (result, o2) = r1.overflowing_add(self.read_cpsr().carry());
         self.write_reg(rd, result);
         if s {
             if rd == PC_REG {
                 self.return_from_exception();
             } else {
-                cpsr.set(CPSR::N, test_bit(result, 31));
-                cpsr.set(CPSR::Z, result == 0);
-                cpsr.set(CPSR::C, o1 || o2);
-                cpsr.set(CPSR::V, test_bit(!(op1 ^ op2) & (op1 ^ result), 31));
-                self.write_flags(cpsr);
+                let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+                let v = !(op1 ^ op2) & (op1 ^ result) & bit(31);
+                flags |= CPSR::from_bits_truncate(v >> 3);
+                flags.set(CPSR::Z, result == 0);
+                flags.set(CPSR::C, o1 || o2);
+                self.write_masked_flags(CPSR::N | CPSR::Z | CPSR::C | CPSR::V, flags);
             }
         }
     }
@@ -381,11 +381,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let result = op1.wrapping_mul(op2);
         self.write_reg(rd, result);
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.remove(CPSR::C);
-            self.write_flags(cpsr);
+            let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+            flags.set(CPSR::Z, result == 0);
+            self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         }
         mul_cycles(op2)
     }
@@ -399,11 +397,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let result = mul_result.wrapping_add(self.read_reg(rn));
         self.write_reg(rd, result);
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.remove(CPSR::C);
-            self.write_flags(cpsr);
+            let mut flags = CPSR::from_bits_truncate(result) & CPSR::N;
+            flags.set(CPSR::Z, result == 0);
+            self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         }
         mul_cycles(op2) + 1
     }
@@ -418,11 +414,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         self.write_reg(rd_lo, u64::lo(result));
         self.write_reg(rd_hi, u64::hi(result));
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, u64::test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.remove(CPSR::C);
-            self.write_flags(cpsr);
+            let mut flags = CPSR::from_bits_truncate(result as u32) & CPSR::N;
+            flags.set(CPSR::Z, result == 0);
+            self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         }
         mul_cycles(op2) + 1
     }
@@ -439,11 +433,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         self.write_reg(rd_lo, u64::lo(result));
         self.write_reg(rd_hi, u64::hi(result));
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, u64::test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.remove(CPSR::C);
-            self.write_flags(cpsr);
+            let mut flags = CPSR::from_bits_truncate(result as u32) & CPSR::N;
+            flags.set(CPSR::Z, result == 0);
+            self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         }
         mul_cycles(op2) + 2
     }
@@ -458,11 +450,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         self.write_reg(rd_lo, u64::lo(result));
         self.write_reg(rd_hi, u64::hi(result));
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, u64::test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.remove(CPSR::C);
-            self.write_flags(cpsr);
+            let mut flags = CPSR::from_bits_truncate(result as u32) & CPSR::N;
+            flags.set(CPSR::Z, result == 0);
+            self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         }
         mul_cycles(op2) + 1
     }
@@ -479,11 +469,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         self.write_reg(rd_lo, u64::lo(result));
         self.write_reg(rd_hi, u64::hi(result));
         if s {
-            let mut cpsr = self.read_cpsr();
-            cpsr.set(CPSR::N, u64::test_bit(result, 31));
-            cpsr.set(CPSR::Z, result == 0);
-            cpsr.remove(CPSR::C);
-            self.write_flags(cpsr);
+            let mut flags = CPSR::from_bits_truncate(result as u32) & CPSR::N;
+            flags.set(CPSR::Z, result == 0);
+            self.write_masked_flags(CPSR::N | CPSR::Z, flags);
         }
         mul_cycles(op2) + 2
     }
@@ -523,10 +511,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
     /// Branch and exchange - switch to Thumb ISA
     fn bx(&mut self, reg: usize) -> usize {
         let reg_val = self.read_reg(reg);
-        let mut cpsr = self.read_cpsr();
-        let src_i_size = cpsr.instr_size();
-        cpsr.set(CPSR::T, test_bit(reg_val, 0));
-        self.write_flags(cpsr);
+        let src_i_size = self.read_cpsr().instr_size();
+        let t = (reg_val & bit(0)) << 5;
+        self.write_masked_flags(CPSR::T, CPSR::from_bits_truncate(t));
 
         let dest = reg_val & 0xFFFFFFFE;
         self.do_branch(dest.wrapping_sub(src_i_size));
@@ -540,10 +527,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         self.write_reg(LINK_REG, target_addr);
         // To ensure an interrupt doesn't happen between here and the next instruction,
         // we must briefly disable interrupts.
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::BLI, cpsr.contains(CPSR::I));
-        cpsr.insert(CPSR::I);
-        self.write_cpsr(cpsr);
+        let mut flags = CPSR::I;
+        flags.set(CPSR::BLI, self.read_cpsr().contains(CPSR::I));
+        self.write_masked_flags(CPSR::I | CPSR::BLI, flags);
         0
     }
 
@@ -554,10 +540,9 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
         let dest = self.read_reg(LINK_REG).wrapping_add(offset);
         self.write_reg(LINK_REG, return_addr | 1);
         // We must re-enable interrupts if they were enabled before.
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::I, cpsr.contains(CPSR::BLI));
-        cpsr.remove(CPSR::BLI);
-        self.write_cpsr(cpsr);
+        let i = (self.read_cpsr() & CPSR::BLI).bits() >> 1;
+        self.write_masked_flags(CPSR::I | CPSR::BLI, CPSR::from_bits_truncate(i));
+
         // Call into JIT cache.
         self.call_subroutine(dest, T_SIZE);
         0

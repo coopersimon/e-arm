@@ -360,8 +360,9 @@ impl<M: Mem32<Addr = u32>> ARMCore<M> for ARM7TDMI<M> {
         self.cpsr = data;
         self.shadow_registers();
     }
-    fn write_flags(&mut self, flags: CPSR) {
-        self.cpsr = flags;
+    fn write_masked_flags(&mut self, mask: CPSR, values: CPSR) {
+        self.cpsr.remove(mask);
+        self.cpsr.insert(values);
     }
 
     fn read_spsr(&self) -> CPSR {

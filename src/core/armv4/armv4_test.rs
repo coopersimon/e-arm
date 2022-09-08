@@ -61,8 +61,9 @@ impl ARMCore<TestMem> for TestARM4Core {
     fn write_cpsr(&mut self, data: CPSR) {
         self.cpsr = data;
     }
-    fn write_flags(&mut self, flags: CPSR) {
-        self.cpsr = flags;
+    fn write_masked_flags(&mut self, mask: CPSR, values: CPSR) {
+        self.cpsr.remove(mask);
+        self.cpsr.insert(values);
     }
 
     fn read_spsr(&self) -> CPSR {

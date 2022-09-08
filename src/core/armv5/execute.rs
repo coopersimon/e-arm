@@ -47,9 +47,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match op1.checked_add(op2) {
             Some(result) => self.write_reg(rd, result as u32),
             None => {
-                let mut cpsr = self.read_cpsr();
-                cpsr.insert(CPSR::Q);
-                self.write_flags(cpsr);
+                self.write_masked_flags(CPSR::Q, CPSR::Q);
                 self.write_reg(rd, if op1 < 0 {
                     Q_MIN
                 } else {
@@ -68,9 +66,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match op1.checked_sub(op2) {
             Some(result) => self.write_reg(rd, result as u32),
             None => {
-                let mut cpsr = self.read_cpsr();
-                cpsr.insert(CPSR::Q);
-                self.write_flags(cpsr);
+                self.write_masked_flags(CPSR::Q, CPSR::Q);
                 self.write_reg(rd, if op1 < 0 {
                     Q_MIN
                 } else {
@@ -88,9 +84,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match reg.checked_mul(2) {
             Some(result) => result,
             None => {
-                let mut cpsr = self.read_cpsr();
-                cpsr.insert(CPSR::Q);
-                self.write_flags(cpsr);
+                self.write_masked_flags(CPSR::Q, CPSR::Q);
                 if reg < 0 {
                     i32::MIN
                 } else {
@@ -108,9 +102,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match op1.checked_add(op2) {
             Some(result) => self.write_reg(rd, result as u32),
             None => {
-                let mut cpsr = self.read_cpsr();
-                cpsr.insert(CPSR::Q);
-                self.write_flags(cpsr);
+                self.write_masked_flags(CPSR::Q, CPSR::Q);
                 self.write_reg(rd, if op1 < 0 {
                     Q_MIN
                 } else {
@@ -129,9 +121,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         match op1.checked_sub(op2) {
             Some(result) => self.write_reg(rd, result as u32),
             None => {
-                let mut cpsr = self.read_cpsr();
-                cpsr.insert(CPSR::Q);
-                self.write_flags(cpsr);
+                self.write_masked_flags(CPSR::Q, CPSR::Q);
                 self.write_reg(rd, if op1 < 0 {
                     Q_MIN
                 } else {
@@ -173,9 +163,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         let mul_result = op1 * op2;
         let (result, overflow) = mul_result.overflowing_add(self.read_reg(rn) as i32);
         if overflow {
-            let mut cpsr = self.read_cpsr();
-            cpsr.insert(CPSR::Q);
-            self.write_flags(cpsr);
+            self.write_masked_flags(CPSR::Q, CPSR::Q);
         }
         self.write_reg(rd, result as u32);
         0
@@ -190,9 +178,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         let mul_result_32 = (mul_result >> 16) as i32;
         let (result, overflow) = mul_result_32.overflowing_add(self.read_reg(rn) as i32);
         if overflow {
-            let mut cpsr = self.read_cpsr();
-            cpsr.insert(CPSR::Q);
-            self.write_flags(cpsr);
+            self.write_masked_flags(CPSR::Q, CPSR::Q);
         }
         self.write_reg(rd, result as u32);
         0
@@ -219,9 +205,7 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
         let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
 
-        let mut cpsr = self.read_cpsr();
-        cpsr.insert(CPSR::T);
-        self.write_flags(cpsr);
+        self.write_masked_flags(CPSR::T, CPSR::T);
 
         // Call into JIT cache.
         self.call_subroutine(self.read_reg(PC_REG).wrapping_add(offset), I_SIZE);
@@ -232,9 +216,8 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// Branch, link, and exchange - using register value
     fn blxr(&mut self, reg: usize) -> usize {
         let reg_val = self.read_reg(reg);
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::T, u32::test_bit(reg_val, 0));
-        self.write_flags(cpsr);
+        let t = (reg_val & u32::bit(0)) << 5;
+        self.write_masked_flags(CPSR::T, CPSR::from_bits_truncate(t));
 
         let current_pc = self.read_reg(PC_REG).wrapping_sub(I_SIZE);
         self.write_reg(LINK_REG, current_pc);
@@ -249,9 +232,8 @@ pub trait ARMv5<M: Mem32<Addr = u32>>: ARMv4<M> + ARMCoreV5 {
     /// Branch, link, and exchange - using register value
     fn tblxr(&mut self, reg: usize) -> usize {
         let reg_val = self.read_reg(reg);
-        let mut cpsr = self.read_cpsr();
-        cpsr.set(CPSR::T, u32::test_bit(reg_val, 0));
-        self.write_flags(cpsr);
+        let t = (reg_val & u32::bit(0)) << 5;
+        self.write_masked_flags(CPSR::T, CPSR::from_bits_truncate(t));
 
         let current_pc = self.read_reg(PC_REG).wrapping_sub(T_SIZE);
         self.write_reg(LINK_REG, current_pc | 1);

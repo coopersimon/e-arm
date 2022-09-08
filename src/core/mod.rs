@@ -154,8 +154,10 @@ pub trait ARMCore<M: Mem32<Addr = u32>> {
     /// Write to CPSR.
     /// This can change the mode.
     fn write_cpsr(&mut self, data: CPSR);
-    /// Write NZCV flags. This will only change the top 8 bits.
-    fn write_flags(&mut self, flags: CPSR);
+
+    /// Insert flags.
+    /// Only the flags in `mask` will be modified, using the values in `value`.
+    fn write_masked_flags(&mut self, mask: CPSR, value: CPSR);
 
     fn read_spsr(&self) -> CPSR;
     fn write_spsr(&mut self, data: CPSR);
