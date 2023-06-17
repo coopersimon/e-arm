@@ -44,6 +44,7 @@ bitflags! {
         const C = bit(29);      // Carry
         const V = bit(28);      // Overflow
         const Q = bit(27);      // Sticky overflow / Saturate (ARMv5)
+        const NZCV = bits(28, 31); // All arithmetic flags.
 
         const BLI = bit(8);     // Temporary I stack for Thumb BLs
         const I = bit(7);       // IRQs disabled
