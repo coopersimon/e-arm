@@ -178,15 +178,10 @@ impl<M: Mem32<Addr = u32>> ARM7TDMI<M> {
     }
 
     fn jit_compile_subroutine(&mut self, from: u32) -> Subroutine<Self> {
-        let compile = || {
-            for range in &self.jit_ranges {
-                if range.contains(&from) {
-                    return true;
-                }
-            }
-            false
-        };
-        if !compile() {
+        let able_to_compile = self.jit_ranges.iter()
+            .find(|range| range.contains(&from))
+            .is_some();
+        if !able_to_compile {
             return Subroutine::CannotCompile;
         }
         let mut compiler = ARMv4Compiler::new();
