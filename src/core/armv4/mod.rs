@@ -30,5 +30,23 @@ pub fn decode_thumb(i: u16) -> ARMv4Instruction {
 /// Continue for the 2nd and 3rd most significant bytes.
 const fn mul_cycles(op2: u32) -> usize {
     let leading = (op2.leading_zeros() | op2.leading_ones()) as usize;
-    1 + (31 - leading) / 8
+    if leading == 32 { return 1; }
+    (39 - leading) / 8
+}
+
+#[test]
+fn test_mul_cycles() {
+    assert_eq!(mul_cycles(0), 1);
+    assert_eq!(mul_cycles(0xFFFF_FFFF), 1);
+    assert_eq!(mul_cycles(0xFF), 1);
+    assert_eq!(mul_cycles(0xFFFF_FF13), 1);
+    assert_eq!(mul_cycles(0xFFFF), 2);
+    assert_eq!(mul_cycles(0x1234), 2);
+    assert_eq!(mul_cycles(0xFFFF_0123), 2);
+    assert_eq!(mul_cycles(0xFF_FFFF), 3);
+    assert_eq!(mul_cycles(0x54_1234), 3);
+    assert_eq!(mul_cycles(0xFF75_9999), 3);
+    assert_eq!(mul_cycles(0xFF88_8888), 3);
+    assert_eq!(mul_cycles(0x1234_5678), 4);
+    assert_eq!(mul_cycles(0x0200_0000), 4);
 }
