@@ -857,9 +857,11 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             (low_addr, low_addr)
         };
 
+        let mut base_reg_in_list = false;
         let mut access_type = MemCycleType::N;
         let cycles = if transfer_params.pre_index == transfer_params.inc {
             (0..16).filter(|reg| test_bit(reg_list, *reg)).fold(0, |acc, reg| {
+                base_reg_in_list = base_reg_in_list || reg == transfer_params.base_reg;
                 transfer_addr += 4;
                 let (data, cycles) = self.load_word_force_align(access_type, transfer_addr);
                 access_type = MemCycleType::S;
@@ -872,6 +874,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             }) + 1  // TODO: writeback cycles
         } else {
             (0..16).filter(|reg| test_bit(reg_list, *reg)).fold(0, |acc, reg| {
+                base_reg_in_list = base_reg_in_list || reg == transfer_params.base_reg;
                 let (data, cycles) = self.load_word_force_align(access_type, transfer_addr);
                 access_type = MemCycleType::S;
                 if load_from_user {
@@ -884,7 +887,7 @@ pub trait ARMv4<M: Mem32<Addr = u32>>: ARMCore<M> {
             }) + 1  // TODO: writeback cycles
         };
 
-        if transfer_params.writeback {
+        if transfer_params.writeback && !base_reg_in_list {
             self.write_reg(transfer_params.base_reg, writeback_addr);
         }
 
